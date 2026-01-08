@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { RejectionError } from 'webln'
 
 import { useRequestForm } from '@fedi/common/hooks/amount'
+import { useFedimint } from '@fedi/common/hooks/fedimint'
 import { useUpdatingRef } from '@fedi/common/hooks/util'
 import {
     generateInvoice,
@@ -18,12 +19,11 @@ import { formatErrorMessage } from '@fedi/common/utils/format'
 import { lnurlWithdraw } from '@fedi/common/utils/lnurl'
 import { makeLog } from '@fedi/common/utils/log'
 
-import { fedimint } from '../../../bridge'
 import { useAppDispatch, useAppSelector } from '../../../state/hooks'
 import AmountInput from '../../ui/AmountInput'
 import AmountInputDisplay from '../../ui/AmountInputDisplay'
 import CustomOverlay from '../../ui/CustomOverlay'
-import Flex from '../../ui/Flex'
+import { Column } from '../../ui/Flex'
 import FederationWalletSelector from '../send/FederationWalletSelector'
 
 const log = makeLog('MakeInvoiceOverlay')
@@ -38,6 +38,7 @@ export const MakeInvoiceOverlay: React.FC<Props> = ({ onReject, onAccept }) => {
     const { theme } = useTheme()
     const paymentFederation = useAppSelector(selectPaymentFederation)
     const dispatch = useAppDispatch()
+    const fedimint = useFedimint()
     const lnurlWithdrawal = useAppSelector(selectLnurlWithdrawal)
     const requestInvoiceArgs = useAppSelector(selectRequestInvoiceArgs)
     const siteInfo = useAppSelector(selectSiteInfo)
@@ -149,7 +150,7 @@ export const MakeInvoiceOverlay: React.FC<Props> = ({ onReject, onAccept }) => {
                       }),
                 description: requestInvoiceArgs?.defaultMemo || '',
                 body: (
-                    <Flex
+                    <Column
                         grow
                         align="center"
                         gap="lg"
@@ -173,7 +174,7 @@ export const MakeInvoiceOverlay: React.FC<Props> = ({ onReject, onAccept }) => {
                                 error={error}
                             />
                         )}
-                    </Flex>
+                    </Column>
                 ),
                 buttons: [
                     {

@@ -4,12 +4,12 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { StyleSheet } from 'react-native'
 
+import { useFedimint } from '@fedi/common/hooks/fedimint'
 import { useMatrixChatInvites } from '@fedi/common/hooks/matrix'
 import { getMatrixRoomPreview, selectGroupPreviews } from '@fedi/common/redux'
 import { MatrixGroupPreview } from '@fedi/common/types'
 
-import { fedimint } from '../bridge'
-import Flex from '../components/ui/Flex'
+import { Column } from '../components/ui/Flex'
 import HoloCircle from '../components/ui/HoloCircle'
 import { SafeAreaContainer } from '../components/ui/SafeArea'
 import { useAppDispatch, useAppSelector } from '../state/hooks'
@@ -28,6 +28,7 @@ const ConfirmJoinPublicGroup: React.FC<Props> = ({ route, navigation }) => {
     const { joinPublicGroup } = useMatrixChatInvites(t)
 
     const dispatch = useAppDispatch()
+    const fedimint = useFedimint()
 
     const [isJoiningGroup, setIsJoiningGroup] = useState(false)
     const [previewGroup, setPreviewGroup] = useState<
@@ -64,11 +65,11 @@ const ConfirmJoinPublicGroup: React.FC<Props> = ({ route, navigation }) => {
             .catch(() => {
                 setPreviewGroup(null)
             })
-    }, [groupPreviews, groupId, dispatch])
+    }, [groupPreviews, groupId, dispatch, fedimint])
 
     return previewGroup === undefined ? null : (
         <SafeAreaContainer edges="notop">
-            <Flex center grow gap="md">
+            <Column center grow gap="md">
                 <HoloCircle
                     content={<Text style={style.iconText}>👋</Text>}
                     size={64}
@@ -83,7 +84,7 @@ const ConfirmJoinPublicGroup: React.FC<Props> = ({ route, navigation }) => {
                 <Text medium style={style.messageNotice}>
                     {t('feature.chat.public-group-notice')}
                 </Text>
-            </Flex>
+            </Column>
             <Button onPress={handleJoinGroup} loading={isJoiningGroup}>
                 {t('words.continue')}
             </Button>

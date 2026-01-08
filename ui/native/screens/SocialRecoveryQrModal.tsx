@@ -10,11 +10,11 @@ import {
     View,
 } from 'react-native'
 
+import { useFedimint } from '@fedi/common/hooks/fedimint'
 import { useToast } from '@fedi/common/hooks/toast'
 import { makeLog } from '@fedi/common/utils/log'
 
-import { fedimint } from '../bridge'
-import Flex from '../components/ui/Flex'
+import { Row, Column } from '../components/ui/Flex'
 import HoloCard from '../components/ui/HoloCard'
 import QRCode from '../components/ui/QRCode'
 import type { RootStackParamList } from '../types/navigation'
@@ -33,6 +33,7 @@ const SocialRecoveryQrModal: React.FC<Props> = ({ navigation }: Props) => {
     const { theme } = useTheme()
     const { t } = useTranslation()
     const [recoveryQrCode, setRecoveryQrCode] = useState<string>('')
+    const fedimint = useFedimint()
 
     useEffect(() => {
         const getRecoveryAssistCode = async () => {
@@ -47,12 +48,12 @@ const SocialRecoveryQrModal: React.FC<Props> = ({ navigation }: Props) => {
         }
 
         getRecoveryAssistCode()
-    }, [navigation, toast, t])
+    }, [navigation, toast, t, fedimint])
 
     const style = styles(theme)
 
     return (
-        <Flex grow center style={style.container}>
+        <Column grow center style={style.container}>
             <Pressable
                 style={[
                     StyleSheet.absoluteFill,
@@ -60,13 +61,13 @@ const SocialRecoveryQrModal: React.FC<Props> = ({ navigation }: Props) => {
                 ]}
                 onPress={navigation.goBack}
             />
-            <Flex row justify="center" style={style.qrCodeContainer}>
+            <Row justify="center" style={style.qrCodeContainer}>
                 {recoveryQrCode ? (
                     <QRCode value={recoveryQrCode} size={QR_CODE_SIZE} />
                 ) : (
                     <ActivityIndicator />
                 )}
-            </Flex>
+            </Row>
             <View style={style.holoCardContainer}>
                 <HoloCard
                     body={
@@ -76,7 +77,7 @@ const SocialRecoveryQrModal: React.FC<Props> = ({ navigation }: Props) => {
                     }
                 />
             </View>
-        </Flex>
+        </Column>
     )
 }
 

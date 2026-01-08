@@ -11,6 +11,7 @@ import {
 } from 'react-native'
 
 import { useAmountFormatter } from '@fedi/common/hooks/amount'
+import { useFedimint } from '@fedi/common/hooks/fedimint'
 import { useToast } from '@fedi/common/hooks/toast'
 import { useTransactionHistory } from '@fedi/common/hooks/transactions'
 import {
@@ -19,10 +20,9 @@ import {
 } from '@fedi/common/redux'
 import { makeLog } from '@fedi/common/utils/log'
 
-import { fedimint } from '../../../bridge'
 import { useAppDispatch, useAppSelector } from '../../../state/hooks'
 import { Federation, TransactionListEntry } from '../../../types'
-import Flex, { Column, Row } from '../../ui/Flex'
+import { Row, Column } from '../../ui/Flex'
 import NotesInput from '../../ui/NotesInput'
 import SvgImage, { SvgImageSize } from '../../ui/SvgImage'
 import { HistoryDetailItem, HistoryDetailItemProps } from './HistoryDetailItem'
@@ -66,6 +66,8 @@ export const HistoryDetail: React.FC<HistoryDetailProps> = ({
     const toast = useToast()
     const transactionDisplayType = useAppSelector(selectTransactionDisplayType)
     const dispatch = useAppDispatch()
+    const fedimint = useFedimint()
+
     const { fetchTransactions } = useTransactionHistory(federationId)
 
     const { makeFormattedAmountsFromTxn } = useAmountFormatter({ federationId })
@@ -123,7 +125,7 @@ export const HistoryDetail: React.FC<HistoryDetailProps> = ({
         } finally {
             setCheckLoading(false)
         }
-    }, [federationId, txn.id, fetchTransactions, t, toast])
+    }, [federationId, txn.id, fetchTransactions, t, toast, fedimint])
 
     const style = styles(theme)
 
@@ -168,7 +170,7 @@ export const HistoryDetail: React.FC<HistoryDetailProps> = ({
                     </Row>
                 </Pressable>
             </Column>
-            <Flex gap="xs" fullWidth style={style.detailItemsContainer}>
+            <Column gap="xs" fullWidth style={style.detailItemsContainer}>
                 {items.map((item, idx) => (
                     <HistoryDetailItem
                         key={idx}
@@ -212,7 +214,7 @@ export const HistoryDetail: React.FC<HistoryDetailProps> = ({
                         noBorder
                     />
                 )}
-            </Flex>
+            </Column>
             {txn.kind === 'onchainDeposit' && (
                 <View style={style.checkFundsContainer}>
                     <Button

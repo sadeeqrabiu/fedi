@@ -3,6 +3,7 @@ import React, { useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { RejectionError } from 'webln'
 
+import { useFedimint } from '@fedi/common/hooks/fedimint'
 import { selectNostrUnsignedEvent, selectSiteInfo } from '@fedi/common/redux'
 import { formatErrorMessage } from '@fedi/common/utils/format'
 import { makeLog } from '@fedi/common/utils/log'
@@ -10,10 +11,9 @@ import { getNostrEventDisplay } from '@fedi/common/utils/nostr'
 import { SignedNostrEvent } from '@fedi/injections/src/injectables/nostr/types'
 import { eventHashFromEvent } from '@fedi/injections/src/injectables/nostr/utils'
 
-import { fedimint } from '../../../bridge'
 import { useAppSelector } from '../../../state/hooks'
 import CustomOverlay from '../../ui/CustomOverlay'
-import Flex from '../../ui/Flex'
+import { Column } from '../../ui/Flex'
 
 const log = makeLog('AuthOverlay')
 
@@ -26,6 +26,7 @@ export const NostrSignOverlay: React.FC<Props> = ({ onReject, onAccept }) => {
     const { t } = useTranslation()
     const unsignedNostrEvent = useAppSelector(selectNostrUnsignedEvent)
     const siteInfo = useAppSelector(selectSiteInfo)
+    const fedimint = useFedimint()
     const { theme } = useTheme()
     const [isLoading, setIsLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
@@ -82,7 +83,7 @@ export const NostrSignOverlay: React.FC<Props> = ({ onReject, onAccept }) => {
                       }),
                 message: display?.kind && !isAuthEvent ? display.kind : '',
                 body: (
-                    <Flex gap="lg">
+                    <Column gap="lg">
                         {isAuthEvent ? (
                             <Text>
                                 <Trans
@@ -117,7 +118,7 @@ export const NostrSignOverlay: React.FC<Props> = ({ onReject, onAccept }) => {
                                 {error}
                             </Text>
                         )}
-                    </Flex>
+                    </Column>
                 ),
                 buttons: [
                     {

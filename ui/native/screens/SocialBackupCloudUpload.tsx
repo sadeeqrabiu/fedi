@@ -5,11 +5,11 @@ import { useTranslation } from 'react-i18next'
 import { StyleSheet } from 'react-native'
 import Share from 'react-native-share'
 
+import { useFedimint } from '@fedi/common/hooks/fedimint'
 import { locateRecoveryFile } from '@fedi/common/redux'
 import { makeLog } from '@fedi/common/utils/log'
 
-import { fedimint } from '../bridge'
-import Flex from '../components/ui/Flex'
+import { Column } from '../components/ui/Flex'
 import HoloGuidance from '../components/ui/HoloGuidance'
 import SvgImage, { SvgImageSize } from '../components/ui/SvgImage'
 import { useAppDispatch } from '../state/hooks'
@@ -26,6 +26,7 @@ const SocialBackupCloudUpload: React.FC<Props> = ({ navigation }: Props) => {
     const { t } = useTranslation()
     const { theme } = useTheme()
     const dispatch = useAppDispatch()
+    const fedimint = useFedimint()
 
     const shareVideo = async () => {
         try {
@@ -42,7 +43,7 @@ const SocialBackupCloudUpload: React.FC<Props> = ({ navigation }: Props) => {
     const style = styles(theme)
 
     return (
-        <Flex grow center style={style.container}>
+        <Column grow center style={style.container}>
             <HoloGuidance
                 iconImage={
                     <SvgImage name="GoogleDrive" size={SvgImageSize.lg} />
@@ -50,7 +51,7 @@ const SocialBackupCloudUpload: React.FC<Props> = ({ navigation }: Props) => {
                 title={t('feature.backup.cloud-backup')}
                 message={t('feature.backup.cloud-backup-instructions')}
             />
-            <Flex align="center" fullWidth style={style.buttonsContainer}>
+            <Column align="center" fullWidth style={style.buttonsContainer}>
                 <Button
                     title={t('words.skip')}
                     type="clear"
@@ -65,8 +66,8 @@ const SocialBackupCloudUpload: React.FC<Props> = ({ navigation }: Props) => {
                         shareVideo()
                     }}
                 />
-            </Flex>
-        </Flex>
+            </Column>
+        </Column>
     )
 }
 

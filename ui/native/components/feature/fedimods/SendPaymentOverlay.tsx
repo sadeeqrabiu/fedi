@@ -4,6 +4,7 @@ import { Trans, useTranslation } from 'react-i18next'
 import { ActivityIndicator, StyleSheet } from 'react-native'
 import { RejectionError } from 'webln'
 
+import { useFedimint } from '@fedi/common/hooks/fedimint'
 import { useOmniPaymentState } from '@fedi/common/hooks/pay'
 import { useFeeDisplayUtils } from '@fedi/common/hooks/transactions'
 import { useUpdatingRef } from '@fedi/common/hooks/util'
@@ -21,13 +22,12 @@ import { formatErrorMessage } from '@fedi/common/utils/format'
 import { lnurlPay } from '@fedi/common/utils/lnurl'
 import { makeLog } from '@fedi/common/utils/log'
 
-import { fedimint } from '../../../bridge'
 import { useAppDispatch, useAppSelector } from '../../../state/hooks'
 import { MSats, ParserDataType } from '../../../types'
 import AmountInput from '../../ui/AmountInput'
 import AmountInputDisplay from '../../ui/AmountInputDisplay'
 import CustomOverlay from '../../ui/CustomOverlay'
-import Flex from '../../ui/Flex'
+import { Column } from '../../ui/Flex'
 import LineBreak from '../../ui/LineBreak'
 import SvgImage from '../../ui/SvgImage'
 import FederationWalletSelector from '../send/FederationWalletSelector'
@@ -60,6 +60,7 @@ export const SendPaymentOverlay: React.FC<Props> = ({ onReject, onAccept }) => {
     const onRejectRef = useUpdatingRef(onReject)
     const onAcceptRef = useUpdatingRef(onAccept)
     const dispatch = useAppDispatch()
+    const fedimint = useFedimint()
     const {
         inputAmount,
         setInputAmount,
@@ -185,7 +186,7 @@ export const SendPaymentOverlay: React.FC<Props> = ({ onReject, onAccept }) => {
                     fediMod: siteInfo?.title,
                 }),
                 body: (
-                    <Flex
+                    <Column
                         grow
                         align="center"
                         gap="lg"
@@ -216,7 +217,7 @@ export const SendPaymentOverlay: React.FC<Props> = ({ onReject, onAccept }) => {
                                     />
                                 ) : null}
                                 {formattedTotalFee !== '' && (
-                                    <Flex fullWidth>
+                                    <Column fullWidth>
                                         <SendPreviewDetails
                                             onPressFees={() =>
                                                 setShowFeeBreakdown(true)
@@ -229,7 +230,7 @@ export const SendPaymentOverlay: React.FC<Props> = ({ onReject, onAccept }) => {
                                             )}
                                             isLoading={isLoading}
                                         />
-                                    </Flex>
+                                    </Column>
                                 )}
                                 <FeeOverlay
                                     show={showFeeBreakdown}
@@ -255,7 +256,7 @@ export const SendPaymentOverlay: React.FC<Props> = ({ onReject, onAccept }) => {
                                 />
                             </>
                         )}
-                    </Flex>
+                    </Column>
                 ),
                 buttons: [
                     {

@@ -5,7 +5,7 @@ import { StyleSheet } from 'react-native'
 import { useRecoveryProgress } from '@fedi/common/hooks/recovery'
 import { Federation } from '@fedi/common/types'
 
-import Flex from '../../ui/Flex'
+import { Column } from '../../ui/Flex'
 import HoloLoader from '../../ui/HoloLoader'
 
 export type Props = {
@@ -20,18 +20,14 @@ const RecoveryInProgress: React.FC<Props> = ({
     size = 100,
 }: Props) => {
     const { theme } = useTheme()
-    const { progress } = useRecoveryProgress(federationId)
+    const { progress, formattedPercent } = useRecoveryProgress(federationId)
 
     const style = styles(theme)
     return (
-        <Flex grow center gap="lg" style={style.container}>
+        <Column grow center gap="lg" style={style.container}>
             <HoloLoader
                 size={size}
-                label={
-                    progress !== undefined
-                        ? `${Math.floor(progress * 100)}%`
-                        : ''
-                }
+                label={formattedPercent}
                 progress={progress}
             />
             {label && (
@@ -39,7 +35,7 @@ const RecoveryInProgress: React.FC<Props> = ({
                     {label}
                 </Text>
             )}
-        </Flex>
+        </Column>
     )
 }
 

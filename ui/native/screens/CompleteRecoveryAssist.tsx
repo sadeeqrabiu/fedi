@@ -5,14 +5,14 @@ import { useTranslation } from 'react-i18next'
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native'
 import Video, { VideoRef } from 'react-native-video'
 
+import { useFedimint } from '@fedi/common/hooks/fedimint'
 import { useToast } from '@fedi/common/hooks/toast'
 import { approveSocialRecoveryRequest } from '@fedi/common/redux'
 import { makeLog } from '@fedi/common/utils/log'
 import { prefixFileUri } from '@fedi/common/utils/media'
 
-import { fedimint } from '../bridge'
 import CheckBox from '../components/ui/CheckBox'
-import Flex from '../components/ui/Flex'
+import { Column } from '../components/ui/Flex'
 import LineBreak from '../components/ui/LineBreak'
 import SvgImage, { SvgImageSize } from '../components/ui/SvgImage'
 import { useAppDispatch, useAppSelector } from '../state/hooks'
@@ -32,6 +32,7 @@ const CompleteRecoveryAssist: React.FC<Props> = ({
     const { t } = useTranslation()
     const { theme } = useTheme()
     const dispatch = useAppDispatch()
+    const fedimint = useFedimint()
     const toast = useToast()
     const { videoPath, recoveryId, federationId } = route.params
     const [isPaused, setIsPaused] = useState(true)
@@ -84,6 +85,7 @@ const CompleteRecoveryAssist: React.FC<Props> = ({
         t,
         dispatch,
         federationId,
+        fedimint,
     ])
 
     const style = styles(theme)
@@ -133,7 +135,7 @@ const CompleteRecoveryAssist: React.FC<Props> = ({
                     )}
                 </Text>
                 <LineBreak />
-                <Flex grow align="start" style={style.confirmationContainer}>
+                <Column grow align="start" style={style.confirmationContainer}>
                     <CheckBox
                         title={
                             <Text caption medium style={style.checkboxText}>
@@ -166,7 +168,7 @@ const CompleteRecoveryAssist: React.FC<Props> = ({
                             setDenialSelected(true)
                         }}
                     />
-                </Flex>
+                </Column>
             </ScrollView>
 
             <Button

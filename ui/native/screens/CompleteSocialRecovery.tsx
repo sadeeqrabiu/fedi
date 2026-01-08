@@ -10,13 +10,13 @@ import {
     View,
 } from 'react-native'
 
+import { useFedimint } from '@fedi/common/hooks/fedimint'
 import { useToast } from '@fedi/common/hooks/toast'
 import { completeSocialRecovery } from '@fedi/common/redux'
 import type { GuardianApproval, SocialRecoveryEvent } from '@fedi/common/types'
 import { makeLog } from '@fedi/common/utils/log'
 
-import { fedimint } from '../bridge'
-import Flex from '../components/ui/Flex'
+import { Row, Column } from '../components/ui/Flex'
 import HoloCard from '../components/ui/HoloCard'
 import QRCode from '../components/ui/QRCode'
 import { useAppDispatch } from '../state/hooks'
@@ -40,6 +40,7 @@ const CompleteSocialRecovery: React.FC<Props> = ({ navigation }: Props) => {
     const { theme } = useTheme()
     const toast = useToast()
     const dispatch = useAppDispatch()
+    const fedimint = useFedimint()
     const [recovering, setRecovering] = useState(false)
 
     const [approvals, setApprovals] = useState<SocialRecoveryEvent | undefined>(
@@ -60,7 +61,7 @@ const CompleteSocialRecovery: React.FC<Props> = ({ navigation }: Props) => {
         }
 
         getRecoveryAssistCode()
-    }, [navigation, toast, t])
+    }, [navigation, toast, t, fedimint])
 
     // ask bridge for social recovery status every second
     useEffect(() => {
@@ -80,7 +81,7 @@ const CompleteSocialRecovery: React.FC<Props> = ({ navigation }: Props) => {
         }, 1000)
 
         return () => clearInterval(interval)
-    }, [toast, recovering, recoveryQrCode, setApprovals, t])
+    }, [toast, recovering, recoveryQrCode, setApprovals, t, fedimint])
 
     useEffect(() => {
         const completeRecovery = async () => {
@@ -104,7 +105,7 @@ const CompleteSocialRecovery: React.FC<Props> = ({ navigation }: Props) => {
         if (recovering) {
             completeRecovery()
         }
-    }, [dispatch, navigation, recovering, toast, t])
+    }, [dispatch, navigation, recovering, toast, t, fedimint])
 
     const renderGuardianApprovalStatus = () => {
         if (approvals?.remaining === 0) {
@@ -123,7 +124,7 @@ const CompleteSocialRecovery: React.FC<Props> = ({ navigation }: Props) => {
             approvals &&
             approvals.approvals.map((approval: GuardianApproval, i) => {
                 return (
-                    <Flex row justify="between" key={`gr-${i}`}>
+                    <Row justify="between" key={`gr-${i}`}>
                         <Text>{approval.guardianName}</Text>
                         <Text
                             style={
@@ -133,7 +134,7 @@ const CompleteSocialRecovery: React.FC<Props> = ({ navigation }: Props) => {
                                 ? t('words.approved')
                                 : t('words.pending')}
                         </Text>
-                    </Flex>
+                    </Row>
                 )
             })
         )
@@ -142,9 +143,9 @@ const CompleteSocialRecovery: React.FC<Props> = ({ navigation }: Props) => {
     // Show loading indicator until we have approvals
     if (approvals == null) {
         return (
-            <Flex grow center>
+            <Column grow center>
                 <ActivityIndicator size="large" />
-            </Flex>
+            </Column>
         )
     }
 
@@ -164,13 +165,13 @@ const CompleteSocialRecovery: React.FC<Props> = ({ navigation }: Props) => {
             />
 
             <View style={styles(theme).guardiansContainer}>
-                <Flex row justify="between">
+                <Row justify="between">
                     <Text bold>
                         {t('feature.recovery.guardian-approvals')}
                         {'\n'}
                     </Text>
                     {renderGuardianApprovalStatus()}
-                </Flex>
+                </Row>
                 {renderGuardians()}
             </View>
             <Button

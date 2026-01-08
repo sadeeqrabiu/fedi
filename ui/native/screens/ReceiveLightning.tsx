@@ -1,15 +1,15 @@
-import { useFocusEffect } from '@react-navigation/native'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
+import { Button } from '@rneui/themed'
 import React, { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ActivityIndicator, Keyboard, View } from 'react-native'
+import { ActivityIndicator, Keyboard, ScrollView, View } from 'react-native'
 
 import { useRequestForm } from '@fedi/common/hooks/amount'
-import { useSyncCurrencyRatesAndCache } from '@fedi/common/hooks/currency'
 import { useIsOnchainDepositSupported } from '@fedi/common/hooks/federation'
 import {
     useMakeOnchainAddress,
     useMakeLightningRequest,
+    useLnurlReceiveCode,
 } from '@fedi/common/hooks/receive'
 import { useToast } from '@fedi/common/hooks/toast'
 import { selectIsInternetUnreachable } from '@fedi/common/redux'
@@ -17,9 +17,10 @@ import amountUtils from '@fedi/common/utils/AmountUtils'
 
 import InternetUnreachableBanner from '../components/feature/environment/InternetUnreachableBanner'
 import ReceiveQr from '../components/feature/receive/ReceiveQr'
-import RequestTypeSwitcher from '../components/feature/receive/RequestTypeSwitcher'
 import { AmountScreen } from '../components/ui/AmountScreen'
+import { OrDivider } from '../components/ui/OrDivider'
 import { SafeAreaContainer, SafeScrollArea } from '../components/ui/SafeArea'
+import { Switcher } from '../components/ui/Switcher'
 import { useAppSelector } from '../state/hooks'
 import { reset } from '../state/navigation'
 import {
@@ -29,12 +30,15 @@ import {
     TransactionListEntry,
 } from '../types'
 import type { RootStackParamList } from '../types/navigation'
+import { useSyncCurrencyRatesOnFocus } from '../utils/hooks/currency'
 import { useRecheckInternet } from '../utils/hooks/environment'
 
 export type Props = NativeStackScreenProps<
     RootStackParamList,
     'ReceiveLightning'
 >
+
+type Tab = 'lightning' | 'onchain'
 
 const ReceiveLightning: React.FC<Props> = ({ navigation, route }: Props) => {
     const { federationId } = route.params
@@ -52,13 +56,28 @@ const ReceiveLightning: React.FC<Props> = ({ navigation, route }: Props) => {
     const [requestType, setRequestType] = useState<BitcoinOrLightning>(
         BitcoinOrLightning.lightning,
     )
+    const [activeTab, setActiveTab] = useState<Tab>('lightning')
 
     const isOnchainSupported = useIsOnchainDepositSupported(federationId)
     const isOffline = useAppSelector(selectIsInternetUnreachable)
     const toast = useToast()
-
+    const { supportsLnurl } = useLnurlReceiveCode(federationId || '')
     const recheckConnection = useRecheckInternet()
-    const syncCurrencyRatesAndCache = useSyncCurrencyRatesAndCache()
+
+    // Setup switcher options
+    const switcherOptions: Array<{
+        label: string
+        value: Tab
+    }> = [
+        {
+            label: t('words.lightning'),
+            value: 'lightning',
+        },
+        {
+            label: t('words.onchain'),
+            value: 'onchain',
+        },
+    ]
 
     const handleTransactionPaid = (tx: TransactionListEntry) => {
         navigation.dispatch(
@@ -89,11 +108,7 @@ const ReceiveLightning: React.FC<Props> = ({ navigation, route }: Props) => {
         [onSaveNotes, t, toast],
     )
 
-    useFocusEffect(
-        useCallback(() => {
-            syncCurrencyRatesAndCache(federationId)
-        }, [syncCurrencyRatesAndCache, federationId]),
-    )
+    useSyncCurrencyRatesOnFocus(federationId)
 
     // Generate onchain address if needed
     useEffect(() => {
@@ -105,6 +120,14 @@ const ReceiveLightning: React.FC<Props> = ({ navigation, route }: Props) => {
             }
         }
     }, [makeOnchainAddress, requestType, address, t, toast])
+
+    useEffect(() => {
+        setRequestType(
+            activeTab === 'lightning'
+                ? BitcoinOrLightning.lightning
+                : BitcoinOrLightning.bitcoin,
+        )
+    }, [activeTab])
 
     const onChangeAmount = (updatedValue: Sats) => {
         setSubmitAttempts(0)
@@ -144,16 +167,15 @@ const ReceiveLightning: React.FC<Props> = ({ navigation, route }: Props) => {
         <SafeScrollArea edges="bottom">
             {isOffline && <InternetUnreachableBanner />}
             <SafeAreaContainer edges="horizontal">
-                {isOnchainSupported && (
-                    <RequestTypeSwitcher
-                        requestType={requestType}
-                        onSwitch={() => {
-                            requestType === BitcoinOrLightning.lightning
-                                ? setRequestType(BitcoinOrLightning.bitcoin)
-                                : setRequestType(BitcoinOrLightning.lightning)
-                        }}
-                    />
-                )}
+                <View style={{ marginTop: 16 }}>
+                    {isOnchainSupported && (
+                        <Switcher<Tab>
+                            options={switcherOptions}
+                            selected={activeTab}
+                            onChange={(newTab: Tab) => setActiveTab(newTab)}
+                        />
+                    )}
+                </View>
                 {requestType === BitcoinOrLightning.bitcoin && address ? (
                     <View>
                         {isAddressLoading ? (
@@ -173,36 +195,53 @@ const ReceiveLightning: React.FC<Props> = ({ navigation, route }: Props) => {
                         )}
                     </View>
                 ) : (
-                    <AmountScreen
-                        showBalance={true}
-                        federationId={federationId}
-                        amount={amount}
-                        onChangeAmount={onChangeAmount}
-                        minimumAmount={minimumAmount}
-                        maximumAmount={maximumAmount}
-                        submitAttempts={submitAttempts}
-                        isSubmitting={isInvoiceLoading}
-                        readOnly={Boolean(exactAmount)}
-                        verb={t('words.request')}
-                        buttons={[
-                            {
-                                title: `${t('words.request')}${
-                                    amount
-                                        ? ` ${amountUtils.formatSats(amount)} `
-                                        : ' '
-                                }${t('words.sats').toUpperCase()}`,
-                                onPress: handleSubmit,
-                                disabled: isInvoiceLoading,
-                                loading: isInvoiceLoading,
-                                containerStyle: {
-                                    width: '100%',
+                    <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
+                        <AmountScreen
+                            showBalance={true}
+                            federationId={federationId}
+                            amount={amount}
+                            onChangeAmount={onChangeAmount}
+                            minimumAmount={minimumAmount}
+                            maximumAmount={maximumAmount}
+                            submitAttempts={submitAttempts}
+                            isSubmitting={isInvoiceLoading}
+                            readOnly={Boolean(exactAmount)}
+                            verb={t('words.request')}
+                            buttons={[
+                                {
+                                    title: `${t('words.request')}${
+                                        amount
+                                            ? ` ${amountUtils.formatSats(amount)} `
+                                            : ' '
+                                    }${t('words.sats').toUpperCase()}`,
+                                    onPress: handleSubmit,
+                                    disabled: isInvoiceLoading,
+                                    loading: isInvoiceLoading,
+                                    containerStyle: {
+                                        width: '100%',
+                                    },
                                 },
-                            },
-                        ]}
-                        isIndependent={false}
-                        notes={notes}
-                        setNotes={setNotes}
-                    />
+                            ]}
+                            isIndependent={false}
+                            notes={notes}
+                            setNotes={setNotes}
+                        />
+                        {supportsLnurl && (
+                            <>
+                                <OrDivider />
+                                <Button
+                                    fullWidth
+                                    day
+                                    onPress={() =>
+                                        navigation.navigate('ReceiveLnurl', {
+                                            federationId,
+                                        })
+                                    }
+                                    title={t('phrases.reusable-payment-code')}
+                                />
+                            </>
+                        )}
+                    </ScrollView>
                 )}
             </SafeAreaContainer>
         </SafeScrollArea>

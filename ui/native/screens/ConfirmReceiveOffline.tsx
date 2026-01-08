@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ActivityIndicator, StyleSheet, View } from 'react-native'
 
+import { useFedimint } from '@fedi/common/hooks/fedimint'
 import { useToast } from '@fedi/common/hooks/toast'
 import {
     receiveEcash,
@@ -17,11 +18,10 @@ import { RpcEcashInfo } from '@fedi/common/types/bindings'
 import amountUtils from '@fedi/common/utils/AmountUtils'
 import { makeLog } from '@fedi/common/utils/log'
 
-import { fedimint } from '../bridge'
 import { FederationLogo } from '../components/feature/federations/FederationLogo'
 import RecoveryInProgress from '../components/feature/recovery/RecoveryInProgress'
 import FiatAmount from '../components/feature/wallet/FiatAmount'
-import Flex from '../components/ui/Flex'
+import { Row, Column } from '../components/ui/Flex'
 import HoloAlert from '../components/ui/HoloAlert'
 import { SafeAreaContainer } from '../components/ui/SafeArea'
 import SvgImage from '../components/ui/SvgImage'
@@ -43,6 +43,7 @@ const ConfirmReceiveOffline: React.FC<Props> = ({
     const { t } = useTranslation()
     const toast = useToast()
     const dispatch = useAppDispatch()
+    const fedimint = useFedimint()
     const { ecash } = route.params
     const [parsedEcash, setParsedEcash] = useState<RpcEcashInfo | null>(null)
     const [receiving, setReceiving] = useState(false)
@@ -99,7 +100,16 @@ const ConfirmReceiveOffline: React.FC<Props> = ({
             toast.error(t, e)
             setReceiving(false)
         }
-    }, [ecash, dispatch, navigation, receiving, toast, t, parsedEcash])
+    }, [
+        ecash,
+        dispatch,
+        navigation,
+        receiving,
+        toast,
+        t,
+        parsedEcash,
+        fedimint,
+    ])
 
     useEffect(() => {
         dispatch(parseEcash({ fedimint, ecash }))
@@ -111,7 +121,7 @@ const ConfirmReceiveOffline: React.FC<Props> = ({
                 log.error('PANIC: ecash validation failed')
                 toast.error(t, 'errors.invalid-ecash-token')
             })
-    }, [ecash, dispatch, toast, t])
+    }, [ecash, dispatch, toast, t, fedimint])
 
     if (parsedEcash && parsedEcash.federation_type !== 'joined') {
         // Should never happen since you are required to go through the join flow
@@ -127,14 +137,14 @@ const ConfirmReceiveOffline: React.FC<Props> = ({
 
     return (
         <SafeAreaContainer edges="notop" style={style.container}>
-            <Flex align="center" fullWidth style={style.content}>
-                <Flex row align="center" gap="sm">
+            <Column align="center" fullWidth style={style.content}>
+                <Row align="center" gap="sm">
                     <Text maxFontSizeMultiplier={1.5}>
                         {t('feature.receive.receive-ecash-from')}
                     </Text>
                     {ecashFederation &&
                     ecashFederation.init_state === 'ready' ? (
-                        <Flex row align="center" gap="sm">
+                        <Row align="center" gap="sm">
                             <FederationLogo
                                 federation={ecashFederation}
                                 size={24}
@@ -146,13 +156,13 @@ const ConfirmReceiveOffline: React.FC<Props> = ({
                                 maxFontSizeMultiplier={1.5}>
                                 {ecashFederation.name || ''}
                             </Text>
-                        </Flex>
+                        </Row>
                     ) : (
                         <ActivityIndicator />
                     )}
-                </Flex>
-                <Flex center gap="xs" style={style.amountContainer}>
-                    <Flex row align="center">
+                </Row>
+                <Column center gap="xs" style={style.amountContainer}>
+                    <Row align="center">
                         {amountSats ? (
                             <Text
                                 h1>{`${amountUtils.formatNumber(amountSats)} `}</Text>
@@ -160,15 +170,14 @@ const ConfirmReceiveOffline: React.FC<Props> = ({
                             <ActivityIndicator />
                         )}
                         <Text h2>{`${t('words.sats').toUpperCase()}`}</Text>
-                    </Flex>
+                    </Row>
                     <FiatAmount amountSats={amountSats} />
-                </Flex>
-            </Flex>
-            <Flex grow justify="end" gap="lg" fullWidth>
+                </Column>
+            </Column>
+            <Column grow justify="end" gap="lg" fullWidth>
                 {isFederationRecovering && (
                     <HoloAlert>
-                        <Flex
-                            row
+                        <Row
                             align="center"
                             justify="between"
                             fullWidth
@@ -180,20 +189,20 @@ const ConfirmReceiveOffline: React.FC<Props> = ({
                                     federationId={parsedEcash?.federation_id}
                                 />
                             </View>
-                        </Flex>
+                        </Row>
                     </HoloAlert>
                 )}
                 {isOffline && (
                     <HoloAlert>
-                        <Flex center gap="sm">
-                            <Flex row align="center" gap="sm">
+                        <Column center gap="sm">
+                            <Row align="center" gap="sm">
                                 <SvgImage name="Offline" />
                                 <Text bold>{t('phrases.youre-offline')}</Text>
-                            </Flex>
+                            </Row>
                             <Text caption>
                                 {t('feature.receive.claim-ecash-online')}
                             </Text>
-                        </Flex>
+                        </Column>
                     </HoloAlert>
                 )}
                 <Button
@@ -208,7 +217,7 @@ const ConfirmReceiveOffline: React.FC<Props> = ({
                     disabled={isFederationRecovering}
                     loading={receiving}
                 />
-            </Flex>
+            </Column>
         </SafeAreaContainer>
     )
 }

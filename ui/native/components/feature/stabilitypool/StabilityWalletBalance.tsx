@@ -1,13 +1,15 @@
-import { Text, useTheme, type Theme } from '@rneui/themed'
+import { Text } from '@rneui/themed'
 import React from 'react'
 import { useTranslation } from 'react-i18next'
 import { StyleSheet } from 'react-native'
 
+import { useRecoveryProgress } from '@fedi/common/hooks/recovery'
 import { selectStableBalancePending } from '@fedi/common/redux/wallet'
 import { Federation } from '@fedi/common/types'
 
 import { useAppSelector, useStabilityPool } from '../../../state/hooks'
-import Flex from '../../ui/Flex'
+import { Column, Row } from '../../ui/Flex'
+import HoloProgressCircle from '../../ui/HoloProgressCircle'
 
 type Props = {
     federationId: Federation['id']
@@ -15,7 +17,6 @@ type Props = {
 
 const Balance: React.FC<Props> = ({ federationId }) => {
     const { t } = useTranslation()
-    const { theme } = useTheme()
     const stableBalancePending = useAppSelector(s =>
         selectStableBalancePending(s, federationId),
     )
@@ -25,18 +26,19 @@ const Balance: React.FC<Props> = ({ federationId }) => {
         stableBalancePending > 0
             ? '+' + formattedStableBalancePending
             : formattedStableBalancePending
+    const { progress, recoveryInProgress } = useRecoveryProgress(federationId)
 
-    const style = styles(theme)
+    if (recoveryInProgress) return <HoloProgressCircle progress={progress} />
 
     return (
-        <Flex row align="center" gap="lg">
-            <Flex gap="xxs">
+        <Row align="center" gap="lg">
+            <Column gap="xxs">
                 <Text
                     medium
                     style={style.balanceText}
                     adjustsFontSizeToFit
                     numberOfLines={1}>
-                    {`${formattedStableBalance}`}
+                    {formattedStableBalance}
                 </Text>
                 {stableBalancePending !== 0 && (
                     <Text
@@ -49,20 +51,15 @@ const Balance: React.FC<Props> = ({ federationId }) => {
                         })}
                     </Text>
                 )}
-            </Flex>
-        </Flex>
+            </Column>
+        </Row>
     )
 }
 
-const styles = (theme: Theme) =>
-    StyleSheet.create({
-        balanceText: {
-            textAlign: 'right',
-            color: theme.colors.primary,
-        },
-        svgStyle: {
-            opacity: 0.7,
-        },
-    })
+const style = StyleSheet.create({
+    balanceText: {
+        textAlign: 'right',
+    },
+})
 
 export default Balance

@@ -5,15 +5,15 @@ import React, { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ActivityIndicator, StyleSheet, View } from 'react-native'
 
+import { useFedimint } from '@fedi/common/hooks/fedimint'
 import { useToast } from '@fedi/common/hooks/toast'
 import { socialRecoveryDownloadVerificationDoc } from '@fedi/common/redux'
 import type { SocialRecoveryQrCode } from '@fedi/common/types'
 import { makeLog } from '@fedi/common/utils/log'
 
-import { fedimint } from '../bridge'
 import CameraPermissionsRequired from '../components/feature/scan/CameraPermissionsRequired'
 import QrCodeScanner from '../components/feature/scan/QrCodeScanner'
-import Flex from '../components/ui/Flex'
+import { Column } from '../components/ui/Flex'
 import { useAppDispatch, useAppSelector } from '../state/hooks'
 import type { RootStackParamList } from '../types/navigation'
 
@@ -31,6 +31,7 @@ const ScanSocialRecoveryCode: React.FC<Props> = ({
     const { theme } = useTheme()
     const { federationId } = route.params
     const dispatch = useAppDispatch()
+    const fedimint = useFedimint()
     const { t } = useTranslation()
     const toast = useToast()
     const [downloading, setDownloading] = useState<boolean>(false)
@@ -94,6 +95,7 @@ const ScanSocialRecoveryCode: React.FC<Props> = ({
             authenticatedGuardian,
             federationId,
             dispatch,
+            fedimint,
         ],
     )
 
@@ -132,7 +134,7 @@ const ScanSocialRecoveryCode: React.FC<Props> = ({
                 />
             }
             message={t('feature.recovery.camera-access-information')}>
-            <Flex grow center>
+            <Column grow center>
                 <View style={styles(theme).cameraScannerContainer}>
                     {renderQrCodeScanner()}
                 </View>
@@ -146,7 +148,7 @@ const ScanSocialRecoveryCode: React.FC<Props> = ({
                         )
                     }
                 /> */}
-            </Flex>
+            </Column>
         </CameraPermissionsRequired>
     )
 }

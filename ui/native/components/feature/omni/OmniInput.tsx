@@ -5,6 +5,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { StyleSheet, View, ActivityIndicator, Pressable } from 'react-native'
 
+import { useFedimint } from '@fedi/common/hooks/fedimint'
 import { useToast } from '@fedi/common/hooks/toast'
 import { useUpdatingRef } from '@fedi/common/hooks/util'
 import { selectLastUsedFederationId } from '@fedi/common/redux'
@@ -18,13 +19,12 @@ import {
 import { parseUserInput } from '@fedi/common/utils/parser'
 import SvgImage, { SvgImageName } from '@fedi/native/components/ui/SvgImage'
 
-import { fedimint } from '../../../bridge'
 import { useAppSelector } from '../../../state/hooks'
-import Flex from '../../ui/Flex'
+import { Column } from '../../ui/Flex'
+import { OrDivider } from '../../ui/OrDivider'
 import { OmniConfirmation } from './OmniConfirmation'
 import { OmniMemberSearch } from './OmniMemberSearch'
 import { OmniQrScanner } from './OmniQrScanner'
-import { OrDivider } from './OrDivider'
 
 export interface OmniInputAction {
     label: React.ReactNode
@@ -55,6 +55,7 @@ export function OmniInput<
     const { theme } = useTheme()
     const { t } = useTranslation()
     const lastUsedFederationId = useAppSelector(selectLastUsedFederationId)
+    const fedimint = useFedimint()
     const toast = useToast()
     const [showActivityIndicator, setShowActivityIndicator] = useState(false)
     const [inputMethod, setInputMethod] = useState<'scan' | 'search'>(
@@ -145,6 +146,7 @@ export function OmniInput<
             t,
             lastUsedFederationId,
             isInternetUnreachable,
+            fedimint,
         ],
     )
 
@@ -298,7 +300,7 @@ export function OmniInput<
     }
 
     return (
-        <Flex grow fullWidth>
+        <Column grow fullWidth>
             {showActivityIndicator && (
                 <Pressable
                     onPress={() => setShowActivityIndicator(false)}
@@ -325,7 +327,7 @@ export function OmniInput<
                 />
             )}
             {confirmation}
-        </Flex>
+        </Column>
     )
 }
 

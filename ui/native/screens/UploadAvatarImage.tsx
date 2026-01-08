@@ -6,16 +6,16 @@ import { StyleSheet } from 'react-native'
 import RNFS from 'react-native-fs'
 import { launchImageLibrary } from 'react-native-image-picker'
 
+import { useFedimint } from '@fedi/common/hooks/fedimint'
 import { useToast } from '@fedi/common/hooks/toast'
 import {
     selectMatrixAuth,
     uploadAndSetMatrixAvatarUrl,
 } from '@fedi/common/redux'
 
-import { fedimint } from '../bridge'
 import { StoragePermissionGate } from '../components/feature/permissions/StoragePermissionGate'
 import Avatar, { AvatarSize } from '../components/ui/Avatar'
-import Flex from '../components/ui/Flex'
+import { Column } from '../components/ui/Flex'
 import { SafeAreaContainer } from '../components/ui/SafeArea'
 import { useAppDispatch, useAppSelector } from '../state/hooks'
 import type { RootStackParamList } from '../types/navigation'
@@ -30,6 +30,7 @@ const UploadAvatarImage: React.FC<Props> = ({ navigation }: Props) => {
     const { t } = useTranslation()
     const toast = useToast()
     const dispatch = useAppDispatch()
+    const fedimint = useFedimint()
 
     const style = styles(theme)
 
@@ -78,11 +79,11 @@ const UploadAvatarImage: React.FC<Props> = ({ navigation }: Props) => {
         } finally {
             setIsUploading(false)
         }
-    }, [dispatch, t, toast])
+    }, [dispatch, t, toast, fedimint])
 
     const renderPreUploadButtons = () => {
         return (
-            <Flex gap="sm" fullWidth style={style.buttonContainer}>
+            <Column gap="sm" fullWidth style={style.buttonContainer}>
                 <Button
                     titleStyle={style.skipButtonText}
                     color={theme.colors.offWhite100}
@@ -99,19 +100,19 @@ const UploadAvatarImage: React.FC<Props> = ({ navigation }: Props) => {
                     disabled={isUploading || didUpload}
                     loading={isUploading}
                 />
-            </Flex>
+            </Column>
         )
     }
 
     const renderPostUploadButtons = () => {
         return (
-            <Flex gap="sm" fullWidth style={style.buttonContainer}>
+            <Column gap="sm" fullWidth style={style.buttonContainer}>
                 <Button
                     fullWidth
                     title={t('words.continue')}
                     onPress={finishStep}
                 />
-            </Flex>
+            </Column>
         )
     }
 
@@ -128,7 +129,7 @@ const UploadAvatarImage: React.FC<Props> = ({ navigation }: Props) => {
     return (
         <StoragePermissionGate>
             <SafeAreaContainer style={style.container} edges="notop">
-                <Flex align="center" gap="sm" style={style.avatarContainer}>
+                <Column align="center" gap="sm" style={style.avatarContainer}>
                     <Avatar
                         id={matrixAuth?.userId || ''}
                         url={imageUri}
@@ -137,7 +138,7 @@ const UploadAvatarImage: React.FC<Props> = ({ navigation }: Props) => {
                     />
 
                     <Text h2>{greeting}</Text>
-                </Flex>
+                </Column>
 
                 {didUpload
                     ? renderPostUploadButtons()

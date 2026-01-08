@@ -4,13 +4,13 @@ import React, { useCallback, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Platform, ScrollView, StyleSheet, TextInput } from 'react-native'
 
+import { useFedimint } from '@fedi/common/hooks/fedimint'
 import { useToast } from '@fedi/common/hooks/toast'
 import type { SeedWords } from '@fedi/common/types'
 import stringUtils from '@fedi/common/utils/StringUtils'
 
-import { fedimint } from '../bridge'
 import SeedWordInput from '../components/feature/recovery/SeedWordInput'
-import Flex from '../components/ui/Flex'
+import { Row, Column } from '../components/ui/Flex'
 import { SafeAreaContainer } from '../components/ui/SafeArea'
 import { BIP39_WORD_LIST } from '../constants'
 import { usePinContext } from '../state/contexts/PinContext'
@@ -27,6 +27,7 @@ export type Props = NativeStackScreenProps<RootStackParamList, 'ResetPin'>
 const ResetPin: React.FC<Props> = ({ navigation }: Props) => {
     const { t } = useTranslation()
     const { theme } = useTheme()
+    const fedimint = useFedimint()
     const pin = usePinContext()
     const [seedWords, setSeedWords] = useState<SeedWords>(
         new Array(12).fill(''),
@@ -51,7 +52,7 @@ const ResetPin: React.FC<Props> = ({ navigation }: Props) => {
         await pin.unset()
 
         navigation.dispatch(reset('SetPin'))
-    }, [navigation, seedWords, pin, toast, t])
+    }, [navigation, seedWords, pin, toast, t, fedimint])
 
     const handleInputUpdate = (inputValue: string, index: number) => {
         const validatedInput = stringUtils.keepOnlyLowercaseLetters(inputValue)
@@ -113,14 +114,14 @@ const ResetPin: React.FC<Props> = ({ navigation }: Props) => {
                     {t('feature.recovery.personal-recovery-instructions')}
                 </Text>
                 <Card containerStyle={style.roundedCardContainer}>
-                    <Flex row>
-                        <Flex grow basis={false} align="start">
+                    <Row>
+                        <Column grow basis={false} align="start">
                             {renderFirstSixSeedWords()}
-                        </Flex>
-                        <Flex grow basis={false} align="start">
+                        </Column>
+                        <Column grow basis={false} align="start">
                             {renderLastSixSeedWords()}
-                        </Flex>
-                    </Flex>
+                        </Column>
+                    </Row>
                 </Card>
                 <Button
                     title={t('feature.recovery.recover-wallet')}

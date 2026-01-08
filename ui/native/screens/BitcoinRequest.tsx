@@ -4,16 +4,16 @@ import React, { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ActivityIndicator, StyleSheet } from 'react-native'
 
+import { useFedimint } from '@fedi/common/hooks/fedimint'
 import { selectCurrency } from '@fedi/common/redux'
 import { RpcInvoice } from '@fedi/common/types/bindings'
 import amountUtils from '@fedi/common/utils/AmountUtils'
 import { getCurrencyCode } from '@fedi/common/utils/currency'
 import { makeLog } from '@fedi/common/utils/log'
 
-import { fedimint } from '../bridge'
 import ReceiveQr from '../components/feature/receive/ReceiveQr'
 import FiatAmount from '../components/feature/wallet/FiatAmount'
-import Flex from '../components/ui/Flex'
+import { Column } from '../components/ui/Flex'
 import { SafeScrollArea } from '../components/ui/SafeArea'
 import { useAppSelector } from '../state/hooks'
 import { BitcoinOrLightning, BtcLnUri } from '../types'
@@ -27,6 +27,7 @@ const BitcoinRequest: React.FC<Props> = ({ route }: Props) => {
     const { theme } = useTheme()
     const { t } = useTranslation()
     const { invoice, federationId = null } = route.params
+    const fedimint = useFedimint()
 
     const [isLoading, setIsLoading] = useState<boolean>(true)
     const [decoded, setDecoded] = useState<RpcInvoice | null>(null)
@@ -42,13 +43,13 @@ const BitcoinRequest: React.FC<Props> = ({ route }: Props) => {
                 err => log.error('error decoding invoice', err),
             )
             .finally(() => setIsLoading(false))
-    }, [invoice, federationId])
+    }, [invoice, federationId, fedimint])
 
     if (isLoading) {
         return (
-            <Flex grow center>
+            <Column grow center>
                 <ActivityIndicator />
-            </Flex>
+            </Column>
         )
     }
 
@@ -57,7 +58,7 @@ const BitcoinRequest: React.FC<Props> = ({ route }: Props) => {
     return (
         <SafeScrollArea contentContainerStyle={style.container} edges="all">
             {decoded ? (
-                <Flex center style={style.detailsContainer}>
+                <Column center style={style.detailsContainer}>
                     <Text h2>{`${amountUtils.formatNumber(
                         amountUtils.msatToSat(decoded.amount),
                     )} ${t('words.sats').toUpperCase()}`}</Text>
@@ -68,9 +69,9 @@ const BitcoinRequest: React.FC<Props> = ({ route }: Props) => {
                     {decoded.description && (
                         <Text small>{decoded.description}</Text>
                     )}
-                </Flex>
+                </Column>
             ) : (
-                <Flex center style={style.errorContainer}>
+                <Column center style={style.errorContainer}>
                     <Text h2>{`- ${t('words.sats').toUpperCase()}`}</Text>
                     <Text medium color={theme.colors.darkGrey}>
                         {`- ${getCurrencyCode(selectedFiatCurrency)}`}
@@ -78,7 +79,7 @@ const BitcoinRequest: React.FC<Props> = ({ route }: Props) => {
                     <Text small color={theme.colors.red}>
                         {t('phrases.failed-to-decode-invoice')}
                     </Text>
-                </Flex>
+                </Column>
             )}
             <ReceiveQr
                 uri={
