@@ -51,6 +51,7 @@ use rpc_types::matrix::{
 };
 use rpc_types::nostril::{RpcNostrPubkey, RpcNostrSecret};
 use rpc_types::sp_transfer::{RpcAccountId, RpcSpTransferState, SpMatrixTransferId};
+use rpc_types::spv2_transfer_meta::Spv2TransferTxMeta;
 use rpc_types::{
     FrontendMetadata, GuardianStatus, NetworkError, RpcAmount, RpcAppFlavor, RpcEcashInfo,
     RpcEventId, RpcFederation, RpcFederationId, RpcFederationMaybeLoading, RpcFederationPreview,
@@ -677,6 +678,27 @@ async fn approveSocialRecoveryRequest(
 }
 
 #[macro_rules_derive(rpc_method!)]
+async fn setGuardianPassword(
+    bridge: &BridgeFull,
+    federation_id: RpcFederationId,
+    peer_id: RpcPeerId,
+    guardian_password: String,
+) -> anyhow::Result<()> {
+    bridge
+        .set_guardian_password(federation_id, peer_id, guardian_password)
+        .await
+}
+
+#[macro_rules_derive(rpc_method!)]
+async fn getGuardianPassword(
+    bridge: &BridgeFull,
+    federation_id: RpcFederationId,
+    peer_id: RpcPeerId,
+) -> anyhow::Result<String> {
+    bridge.get_guardian_password(federation_id, peer_id).await
+}
+
+#[macro_rules_derive(rpc_method!)]
 async fn completeSocialRecovery(bridge: Arc<BridgeOnboarding>) -> anyhow::Result<()> {
     bridge.complete_social_recovery().await
 }
@@ -1057,6 +1079,7 @@ async fn spv2Transfer(
             rpc_types::SPv2TransferMetadata::StableBalance {
                 frontend_metadata: Some(frontend_meta),
             },
+            Spv2TransferTxMeta::default(),
         )
         .await
         .map(Into::into)
@@ -2378,6 +2401,8 @@ rpc_methods!(RpcMethods {
     completeSocialRecovery,
     socialRecoveryDownloadVerificationDoc,
     approveSocialRecoveryRequest,
+    setGuardianPassword,
+    getGuardianPassword,
     // LNURL
     signLnurlMessage,
     supportsRecurringdLnurl,

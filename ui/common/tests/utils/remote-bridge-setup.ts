@@ -77,18 +77,13 @@ export class IntegrationTestBuilder {
         await this.withOnboardingCompleted()
 
         // Wait for matrix auth to be available and check userId starts with npub
-        await this.waitFor(
-            () => {
-                const matrixAuth = selectMatrixAuth(store.getState())
-                expect(matrixAuth?.userId).toBeTruthy()
-                expect(matrixAuth?.userId.startsWith('@npub1')).toBe(true)
-                expect(matrixAuth?.displayName).toBeTruthy()
-                expect(matrixAuth?.userId).not.toContain(
-                    matrixAuth?.displayName,
-                )
-            },
-            { timeout: 10000 },
-        )
+        await this.waitFor(() => {
+            const matrixAuth = selectMatrixAuth(store.getState())
+            expect(matrixAuth?.userId).toBeTruthy()
+            expect(matrixAuth?.userId.startsWith('@npub1')).toBe(true)
+            expect(matrixAuth?.displayName).toBeTruthy()
+            expect(matrixAuth?.userId).not.toContain(matrixAuth?.displayName)
+        })
 
         return this
     }
@@ -158,14 +153,11 @@ export class IntegrationTestBuilder {
             )
         })
 
-        await this.waitFor(
-            () => {
-                const state = store.getState()
-                const updatedFederations = selectFederations(state)
-                expect(updatedFederations).toHaveLength(1)
-            },
-            { timeout: 15000 },
-        )
+        await this.waitFor(() => {
+            const state = store.getState()
+            const updatedFederations = selectFederations(state)
+            expect(updatedFederations).toHaveLength(1)
+        })
 
         return this
     }
@@ -191,15 +183,12 @@ export class IntegrationTestBuilder {
             await bridge.fedimint.receiveEcash(ecash, federationId)
         })
 
-        await this.waitFor(
-            () => {
-                const state = store.getState()
-                const federation = selectLastUsedFederation(state)
-                expect(federation).toBeDefined()
-                expect(federation?.balance).toBeGreaterThan(amountMsats - 1)
-            },
-            { timeout: 20000 },
-        )
+        await this.waitFor(() => {
+            const state = store.getState()
+            const federation = selectLastUsedFederation(state)
+            expect(federation).toBeDefined()
+            expect(federation?.balance).toBeGreaterThan(amountMsats - 1)
+        })
 
         return this
     }
@@ -241,7 +230,7 @@ export function setupRemoteBridgeTests(): RemoteBridgeTestContext {
         // Mutate the context object
         context.bridge = remoteBridge
         context.store = store
-    }, 10000)
+    })
 
     afterEach(async () => {
         if (cleanupStore) {

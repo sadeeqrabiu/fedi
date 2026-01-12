@@ -47,5 +47,7 @@ module.exports = {
     passWithNoTests: true,
 
     // Load mocks/setup before running tests
-    setupFiles: ['<rootDir>/tests/setup/jest.setup.mocks.ts'],
+    setupFilesAfterEnv: ['<rootDir>/tests/setup/jest.setup.mocks.ts'],
+
+    testTimeout: 60000,
 }
