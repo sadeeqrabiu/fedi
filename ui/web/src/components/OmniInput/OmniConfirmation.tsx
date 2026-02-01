@@ -124,7 +124,7 @@ export const OmniConfirmation: React.FC<Props> = ({
                     text: t('feature.omni.confirm-federation-invite'),
                     continueOnClick: () =>
                         router.push(
-                            `/onboarding/join?invite_code=${parsedData.data.invite}`,
+                            `/onboarding/join?id=${parsedData.data.invite}`,
                         ),
                 }
             case ParserDataType.CommunityInvite:
@@ -133,7 +133,7 @@ export const OmniConfirmation: React.FC<Props> = ({
                     text: t('feature.omni.confirm-community-invite'),
                     continueOnClick: () =>
                         router.push(
-                            `/onboarding/join?invite_code=${parsedData.data.invite}`,
+                            `/onboarding/join?id=${parsedData.data.invite}`,
                         ),
                 }
             case ParserDataType.CashuEcash:
@@ -261,18 +261,13 @@ export const OmniConfirmation: React.FC<Props> = ({
 }
 
 const Container = styled('div', {
-    position: 'absolute',
     inset: 0,
     display: 'flex',
     flexDirection: 'column',
-    justifyContent: 'center',
     alignItems: 'center',
     zIndex: 10,
-
-    '@sm': {
-        position: 'fixed',
-        justifyContent: 'flex-end',
-    },
+    position: 'fixed',
+    justifyContent: 'flex-end',
 })
 
 const backdropFadeIn = keyframes({
@@ -287,12 +282,12 @@ const backdropFadeIn = keyframes({
 const Backdrop = styled('div', {
     position: 'absolute',
     inset: 0,
-    background: theme.colors.secondary,
     zIndex: 1,
+    background: theme.colors.primary20,
+    animation: `${backdropFadeIn} 300ms ease`,
 
     '@sm': {
-        background: theme.colors.primary80,
-        animation: `${backdropFadeIn} 300ms ease`,
+        background: theme.colors.primary50,
     },
 })
 
@@ -306,7 +301,7 @@ const confirmationSlideUp = keyframes({
 })
 
 const Confirmation = styled('div', {
-    width: '100%',
+    width: theme.sizes.desktopAppWidth,
     display: 'flex',
     flexDirection: 'column',
     justifyContent: 'center',
@@ -315,12 +310,13 @@ const Confirmation = styled('div', {
     padding: 24,
     gap: 24,
     zIndex: 2,
+    background: theme.colors.secondary,
+    borderTopRightRadius: 16,
+    borderTopLeftRadius: 16,
+    animation: `${confirmationSlideUp} 200ms ease 200ms both`,
 
     '@sm': {
-        background: theme.colors.secondary,
-        borderTopRightRadius: 16,
-        borderTopLeftRadius: 16,
-        animation: `${confirmationSlideUp} 200ms ease 200ms both`,
+        width: '100%',
     },
 
     '@standalone': {

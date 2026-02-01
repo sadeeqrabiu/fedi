@@ -2,7 +2,7 @@ import { useNavigation } from '@react-navigation/native'
 import { Theme, useTheme } from '@rneui/themed'
 import React from 'react'
 import { useTranslation } from 'react-i18next'
-import { Pressable, StyleSheet } from 'react-native'
+import { Pressable, StyleSheet, View } from 'react-native'
 
 import { theme as fediTheme } from '@fedi/common/constants/theme'
 import { useIsStabilityPoolEnabledByFederation } from '@fedi/common/hooks/federation'
@@ -12,7 +12,7 @@ import {
     selectFederationBalance,
     selectMaxStableBalanceSats,
     selectShouldShowStablePaymentAddress,
-    selectStableBalance,
+    selectStabilityPoolVersion,
     selectStableBalancePending,
     selectStableBalanceSats,
     setPayFromFederationId,
@@ -23,7 +23,6 @@ import { useAppDispatch, useAppSelector } from '../../../state/hooks'
 import { NavigationHook } from '../../../types/navigation'
 import WalletButtons from '../../feature/wallet/WalletButtons'
 import { BubbleCard } from '../../ui/BubbleView'
-import { Row } from '../../ui/Flex'
 import StabilityWalletBalance from './StabilityWalletBalance'
 import StabilityWalletTitle from './StabilityWalletTitle'
 
@@ -44,17 +43,17 @@ const StabilityWallet: React.FC<Props> = ({
     const dispatch = useAppDispatch()
     const toast = useToast()
 
+    const isLegacyStabilityPool = useAppSelector(
+        s => selectStabilityPoolVersion(s, federation.id) === 1,
+    )
     useMonitorStabilityPool(federation.id)
 
     const shouldShowStablePaymentAddress = useAppSelector(s =>
         selectShouldShowStablePaymentAddress(s, federation.id),
     )
-
     const stabilityPoolDisabledByFederation =
         !useIsStabilityPoolEnabledByFederation(federation.id)
-    const stableBalance = useAppSelector(s =>
-        selectStableBalance(s, federation.id),
-    )
+
     const stableBalanceSats = useAppSelector(s =>
         selectStableBalanceSats(s, federation.id),
     )
@@ -70,7 +69,7 @@ const StabilityWallet: React.FC<Props> = ({
 
     const style = styles(theme)
 
-    const handleDeposit = () => {
+    const handleMove = () => {
         if (stabilityPoolDisabledByFederation) {
             toast.show({
                 content: t(
@@ -93,13 +92,13 @@ const StabilityWallet: React.FC<Props> = ({
             })
         } else {
             dispatch(setPayFromFederationId(federation.id))
-            navigation.navigate('StabilityDeposit', {
+            navigation.navigate('StabilityMove', {
                 federationId: federation.id,
             })
         }
     }
 
-    const handleWithdraw = () => {
+    const handleTransfer = () => {
         if (stableBalancePending < 0) {
             toast.show({
                 content: t('feature.stabilitypool.pending-withdrawal-blocking'),
@@ -113,7 +112,7 @@ const StabilityWallet: React.FC<Props> = ({
             })
         } else {
             dispatch(setPayFromFederationId(federation.id))
-            navigation.navigate('StabilityWithdraw', {
+            navigation.navigate('StabilityTransfer', {
                 federationId: federation.id,
             })
         }
@@ -122,16 +121,10 @@ const StabilityWallet: React.FC<Props> = ({
     const handlePress = () => {
         if (!expanded) {
             setExpandedWalletId(federation.id)
-        }
-    }
-
-    const handleHeaderPress = () => {
-        if (expanded) {
-            navigation.navigate('StabilityHome', {
+        } else {
+            navigation.navigate('StabilityHistory', {
                 federationId: federation.id,
             })
-        } else {
-            setExpandedWalletId(federation.id)
         }
     }
 
@@ -140,29 +133,31 @@ const StabilityWallet: React.FC<Props> = ({
             <BubbleCard
                 gradientColors={[...fediTheme.dayLinearGradient]}
                 containerStyle={style.card}>
-                <Pressable style={style.header} onPress={handleHeaderPress}>
+                <View style={style.header}>
                     {/* Icon, title, and chevron grouped together */}
-                    <Row align="center" gap="sm" shrink style={style.leftGroup}>
-                        <StabilityWalletTitle federationId={federation.id} />
-                    </Row>
+                    <StabilityWalletTitle federationId={federation.id} />
                     {/* Balance on the right */}
                     <StabilityWalletBalance federationId={federation.id} />
-                </Pressable>
+                </View>
 
                 <WalletButtons
                     expanded={expanded}
                     federation={federation}
                     incoming={{
-                        onPress: handleDeposit,
+                        onPress: handleMove,
                         // if stable payment address is available, we don't need to disable based on ecash balance since the user can receive stable balance directly from others via transfers
                         disabled: shouldShowStablePaymentAddress
                             ? false
                             : balance === 0,
+                        message: t('words.move'),
+                        icon: 'ArrowsUpDown',
                     }}
                     outgoing={{
-                        onPress: handleWithdraw,
-                        disabled:
-                            stableBalance === 0 && stableBalancePending === 0,
+                        onPress: handleTransfer,
+                        // Disable transfers for spv1
+                        disabled: isLegacyStabilityPool,
+                        message: t('words.transfer'),
+                        icon: 'TransferPeople',
                     }}
                     history={{
                         onPress: () =>
@@ -187,16 +182,8 @@ const styles = (theme: Theme) =>
             flexDirection: 'row',
             justifyContent: 'space-between',
             alignItems: 'center',
-        },
-        /** Allow the title group to shrink so the balance never gets clipped */
-        leftGroup: {
-            minWidth: 0,
-        },
-        buttons: {
-            // marginTop: theme.spacing.lg,
-        },
-        chevron: {
-            left: -58, // align with title text; matches placeholder offset
+            // Exact height value from designs. Matches bitcoin wallet height.
+            height: 42,
         },
     })
 

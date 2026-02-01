@@ -57,7 +57,7 @@ import {
 import { makeLog } from './log'
 import { constructUrl } from './neverthrow'
 import { isBolt11 } from './parser'
-import { coerceTxn } from './wallet'
+import { coerceTxn } from './transaction'
 
 const log = makeLog('common/utils/matrix')
 
@@ -434,6 +434,41 @@ export function getReceivablePaymentEvents(
         }
         return prev
     }, [] as MatrixPaymentEvent[])
+}
+
+export function getReclaimablePaymentEvents(
+    timeline: (MatrixEvent | null)[],
+    myId: string,
+    myFederations: LoadedFederation[],
+) {
+    const reclaimableEvents: Array<MatrixPaymentEvent> = []
+    timeline.forEach(item => {
+        if (item === null) return
+        if (!isPaymentEvent(item)) return
+        if (item.content.senderId !== myId) return
+        if (!item.content.ecash) return
+        if (item.content.status !== 'rejected') return
+        if (!item.content.federationId) return
+        // payment is not receivable if we have not joined the federation this ecash is from or if we have joined but are still recovering
+        const joinedFederation = myFederations.find(
+            f => f.id === item.content.federationId,
+        )
+        if (joinedFederation === undefined) {
+            log.info(
+                `can't cancel ecash from federation ${item.content.federationId}: user is not joined`,
+            )
+            return
+        }
+        if (joinedFederation?.recovering) {
+            log.info(
+                `can't cancel ecash from federation ${item.content.federationId}: user is joined but recovery is in progress`,
+            )
+            return
+        }
+        reclaimableEvents.push(item)
+    })
+
+    return reclaimableEvents
 }
 
 /**

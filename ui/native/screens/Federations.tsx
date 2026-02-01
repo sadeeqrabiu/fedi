@@ -1,8 +1,8 @@
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs'
-import { useNavigation } from '@react-navigation/native'
+import { useFocusEffect } from '@react-navigation/native'
 import { useTheme, type Theme } from '@rneui/themed'
-import React, { useEffect, useState } from 'react'
-import { ScrollView, StyleSheet, View } from 'react-native'
+import React, { useCallback, useState } from 'react'
+import { InteractionManager, ScrollView, StyleSheet, View } from 'react-native'
 
 import {
     selectLoadedFederations,
@@ -24,9 +24,8 @@ export type Props = BottomTabScreenProps<
     'Federations'
 >
 
-const Federations: React.FC<Props> = () => {
+const Federations: React.FC<Props> = ({ navigation }) => {
     const { theme } = useTheme()
-    const navigation = useNavigation()
 
     const [expandedWalletId, setExpandedWalletId] = useState<string | null>(
         null,
@@ -39,11 +38,17 @@ const Federations: React.FC<Props> = () => {
     const style = styles(theme)
 
     // make sure we have at least 1 federation, if not push to JoinFederation screen
-    useEffect(() => {
-        if (loadedFederations.length === 0) {
-            navigation.dispatch(resetToJoinFederation)
-        }
-    }, [loadedFederations.length, navigation])
+    useFocusEffect(
+        useCallback(() => {
+            const task = InteractionManager.runAfterInteractions(() => {
+                if (loadedFederations.length === 0) {
+                    navigation.dispatch(resetToJoinFederation)
+                }
+            })
+
+            return () => task.cancel()
+        }, [loadedFederations.length, navigation]),
+    )
 
     if (loadedFederations.length === 0) {
         return null
@@ -53,15 +58,23 @@ const Federations: React.FC<Props> = () => {
         <ScrollView
             contentContainerStyle={style.container}
             alwaysBounceVertical={false}>
-            <Column gap="lg" fullWidth>
+            <Column fullWidth>
                 <FeaturedFederation />
-                {federations.map(federation => (
+                {federations.length > 0 && (
+                    <View style={style.tileContainer}>
+                        <View style={style.divider} />
+                    </View>
+                )}
+                {federations.map((federation, idx) => (
                     <View key={federation.id} style={style.tileContainer}>
                         <FederationTile
                             federation={federation}
                             expanded={expandedWalletId === federation.id}
                             setExpandedWalletId={setExpandedWalletId}
                         />
+                        {idx < federations.length - 1 && (
+                            <View style={style.divider} />
+                        )}
                     </View>
                 ))}
             </Column>
@@ -75,12 +88,17 @@ const styles = (theme: Theme) =>
             alignItems: 'center',
             justifyContent: 'flex-start',
             marginTop: theme.spacing.sm,
-            // paddingHorizontal: theme.spacing.lg,
             paddingBottom: theme.spacing.xl,
             width: '100%',
         },
         tileContainer: {
             paddingHorizontal: theme.spacing.lg,
+        },
+        divider: {
+            height: 1,
+            width: '100%',
+            backgroundColor: theme.colors.dividerGrey,
+            marginVertical: theme.spacing.xl,
         },
     })
 

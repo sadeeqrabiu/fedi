@@ -21,14 +21,18 @@ declare module '@rneui/themed' {
             moneyGreen: string
             green: string
             green100: string
+            green500: string
             orange: string
             orange100: string
             lightOrange: string
             darkGrey: string
             grey: string
             grey50: string
+            grey100: string
+            grey400: string
             lightGrey: string
             extraLightGrey: string
+            dividerGrey: string
             ghost: string
             keyboardGrey: string
             red: string

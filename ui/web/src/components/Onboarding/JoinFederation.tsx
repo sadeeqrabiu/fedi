@@ -19,7 +19,7 @@ export const JoinFederation: React.FC = () => {
     const { t } = useTranslation()
     const { push, query } = useRouter()
 
-    const inviteCode = String(query.invite_code) || ''
+    const inviteCode = String(query.id) || ''
 
     const {
         isJoining,
@@ -38,8 +38,9 @@ export const JoinFederation: React.FC = () => {
         if (!inviteCode) return
         // skip handling the code if we already have a preview
         if (federationPreview) return
+        if (communityPreview) return
         handleCode(inviteCode)
-    }, [federationPreview, handleCode, inviteCode])
+    }, [federationPreview, communityPreview, handleCode, inviteCode])
 
     let content: React.ReactNode
 

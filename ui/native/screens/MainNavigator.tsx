@@ -53,11 +53,9 @@ import SendHeader from '../components/feature/send/SendHeader'
 import SettingsHeader from '../components/feature/settings/SettingsHeader'
 import ConfirmDepositHeader from '../components/feature/stabilitypool/ConfirmDepositHeader'
 import ConfirmWithdrawHeader from '../components/feature/stabilitypool/ConfirmWithdrawHeader'
-import StabilityDepositHeader from '../components/feature/stabilitypool/StabilityDepositHeader'
 import StabilityHistoryHeader from '../components/feature/stabilitypool/StabilityHistoryHeader'
-import StabilityHomeHeader from '../components/feature/stabilitypool/StabilityHomeHeader'
+import StabilityMoveHeader from '../components/feature/stabilitypool/StabilityMoveHeader'
 import StabilityTransferHeader from '../components/feature/stabilitypool/StabilityTransferHeader'
-import StabilityWithdrawHeader from '../components/feature/stabilitypool/StabilityWithdrawHeader'
 import WithdrawInitiatedHeader from '../components/feature/stabilitypool/WithdrawInitiatedHeader'
 import HelpCentreHeader from '../components/feature/support/HelpCentreHeader'
 import TransactionsHeader from '../components/feature/transaction-history/TransactionsHeader'
@@ -97,7 +95,6 @@ import CompleteSocialRecovery from './CompleteSocialRecovery'
 import ConfirmJoinPublicGroup from './ConfirmJoinPublicGroup'
 import ConfirmReceiveCashu from './ConfirmReceiveCashu'
 import ConfirmReceiveOffline from './ConfirmReceiveOffline'
-import ConfirmRecoveryAssist from './ConfirmRecoveryAssist'
 import ConfirmSendChatPayment from './ConfirmSendChatPayment'
 import ConfirmSendEcash from './ConfirmSendEcash'
 import ConfirmSendLightning from './ConfirmSendLightning'
@@ -148,12 +145,11 @@ import PublicCommunities from './PublicCommunities'
 import PublicFederations from './PublicFederations'
 import Receive from './Receive'
 import ReceiveLightning from './ReceiveLightning'
-import ReceiveLnurl from './ReceiveLnurl'
 import ReceiveStabilityQr from './ReceiveStabilityQr'
 import ReceiveSuccess from './ReceiveSuccess'
 import RecordBackupVideo from './RecordBackupVideo'
 import RecoverFromNonceReuse from './RecoverFromNonceReuse'
-import RecoveryAssistSuccess from './RecoveryAssistSuccess'
+import RecoveryAssistConfirmation from './RecoveryAssistConfirmation'
 import RecoveryDeviceSelection from './RecoveryDeviceSelection'
 import RecoveryNewWallet from './RecoveryNewWallet'
 import RecoveryWalletOptions from './RecoveryWalletOptions'
@@ -165,8 +161,6 @@ import ResetPinStart from './ResetPinStart'
 import RoomSettings from './RoomSettings'
 import ScanMemberCode from './ScanMemberCode'
 import ScanSocialRecoveryCode from './ScanSocialRecoveryCode'
-import SelectRecoveryFileFailure from './SelectRecoveryFileFailure'
-import SelectRecoveryFileSuccess from './SelectRecoveryFileSuccess'
 import Send from './Send'
 import SendOfflineAmount from './SendOfflineAmount'
 import SendOfflineQr from './SendOfflineQr'
@@ -180,17 +174,14 @@ import SocialBackupCloudUpload from './SocialBackupCloudUpload'
 import SocialBackupProcessing from './SocialBackupProcessing'
 import SocialBackupSuccess from './SocialBackupSuccess'
 import SocialRecoveryFailure from './SocialRecoveryFailure'
-import SocialRecoveryQrModal from './SocialRecoveryQrModal'
 import SocialRecoverySuccess from './SocialRecoverySuccess'
 import Splash from './Splash'
 import StabilityConfirmDeposit from './StabilityConfirmDeposit'
 import StabilityConfirmTransfer from './StabilityConfirmTransfer'
 import StabilityConfirmWithdraw from './StabilityConfirmWithdraw'
-import StabilityDeposit from './StabilityDeposit'
 import StabilityHistory from './StabilityHistory'
-import StabilityHome from './StabilityHome'
+import StabilityMove from './StabilityMove'
 import StabilityTransfer from './StabilityTransfer'
-import StabilityWithdraw from './StabilityWithdraw'
 import StabilityWithdrawInitiated from './StabilityWithdrawInitiated'
 import StartRecoveryAssist from './StartRecoveryAssist'
 import StartSocialBackup from './StartSocialBackup'
@@ -372,7 +363,12 @@ export const MainNavigator = () => {
                         name="CompleteSocialRecovery"
                         component={CompleteSocialRecovery}
                         options={() => ({
-                            header: () => <SocialRecoveryHeader cancelButton />,
+                            header: () => (
+                                <SocialRecoveryHeader
+                                    backButton
+                                    cancelSocialRecovery
+                                />
+                            ),
                         })}
                     />
                     {/* Deeplink screen */}
@@ -678,6 +674,16 @@ export const MainNavigator = () => {
                                 <Stack.Screen
                                     name="ChatWallet"
                                     component={ChatWallet}
+                                    options={() => ({
+                                        header: () => (
+                                            <CenteredHeader
+                                                backButton
+                                                title={t(
+                                                    'feature.chat.request-or-send-money',
+                                                )}
+                                            />
+                                        ),
+                                    })}
                                 />
                                 <Stack.Screen
                                     name="ConfirmSendChatPayment"
@@ -686,7 +692,7 @@ export const MainNavigator = () => {
                                         header: () => (
                                             <DefaultChatHeader
                                                 title={t(
-                                                    'phrases.confirm-chat-send',
+                                                    'feature.multispend.confirm-transaction',
                                                 )}
                                             />
                                         ),
@@ -806,18 +812,6 @@ export const MainNavigator = () => {
                                 })}
                             />
                             <Stack.Screen
-                                name="ReceiveLnurl"
-                                component={ReceiveLnurl}
-                                options={() => ({
-                                    header: () => (
-                                        <CenteredHeader
-                                            backButton
-                                            title={t('words.lnurl')}
-                                        />
-                                    ),
-                                })}
-                            />
-                            <Stack.Screen
                                 name="RedeemLnurlWithdraw"
                                 component={RedeemLnurlWithdraw}
                                 options={() => ({
@@ -916,7 +910,7 @@ export const MainNavigator = () => {
                                 component={SocialBackupProcessing}
                                 options={() => ({
                                     header: () => (
-                                        <SocialBackupHeader closeButton />
+                                        <SocialBackupHeader backButton />
                                     ),
                                 })}
                             />
@@ -925,7 +919,7 @@ export const MainNavigator = () => {
                                 component={SocialBackupCloudUpload}
                                 options={() => ({
                                     header: () => (
-                                        <SocialBackupHeader closeButton />
+                                        <SocialBackupHeader backButton />
                                     ),
                                 })}
                             />
@@ -934,7 +928,7 @@ export const MainNavigator = () => {
                                 component={CompleteSocialBackup}
                                 options={() => ({
                                     header: () => (
-                                        <SocialBackupHeader closeButton />
+                                        <SocialBackupHeader backButton />
                                     ),
                                 })}
                             />
@@ -952,16 +946,6 @@ export const MainNavigator = () => {
                                         <SocialRecoveryHeader backButton />
                                     ),
                                 })}
-                            />
-                            <Stack.Screen
-                                name="SelectRecoveryFileSuccess"
-                                component={SelectRecoveryFileSuccess}
-                                options={{ headerShown: false }}
-                            />
-                            <Stack.Screen
-                                name="SelectRecoveryFileFailure"
-                                component={SelectRecoveryFileFailure}
-                                options={{ headerShown: false }}
                             />
                             <Stack.Screen
                                 name="SocialRecoveryFailure"
@@ -984,23 +968,11 @@ export const MainNavigator = () => {
                                 })}
                             />
                             <Stack.Screen
-                                name="ConfirmRecoveryAssist"
-                                component={ConfirmRecoveryAssist}
-                                options={() => ({
-                                    header: () => (
-                                        <RecoveryAssistHeader backButton />
-                                    ),
-                                })}
-                            />
-                            <Stack.Screen
                                 name="ScanSocialRecoveryCode"
                                 component={ScanSocialRecoveryCode}
                                 options={() => ({
                                     header: () => (
-                                        <RecoveryAssistHeader
-                                            backButton
-                                            closeButton
-                                        />
+                                        <RecoveryAssistHeader backButton />
                                     ),
                                 })}
                             />
@@ -1014,8 +986,8 @@ export const MainNavigator = () => {
                                 })}
                             />
                             <Stack.Screen
-                                name="RecoveryAssistSuccess"
-                                component={RecoveryAssistSuccess}
+                                name="RecoveryAssistConfirmation"
+                                component={RecoveryAssistConfirmation}
                                 options={{ headerShown: false }}
                             />
                             {/* Personal Backup */}
@@ -1240,13 +1212,6 @@ export const MainNavigator = () => {
                             />
                             {/* Stability Pools */}
                             <Stack.Screen
-                                name="StabilityHome"
-                                component={StabilityHome}
-                                options={() => ({
-                                    header: () => <StabilityHomeHeader />,
-                                })}
-                            />
-                            <Stack.Screen
                                 name="StabilityHistory"
                                 component={StabilityHistory}
                                 options={() => ({
@@ -1254,17 +1219,10 @@ export const MainNavigator = () => {
                                 })}
                             />
                             <Stack.Screen
-                                name="StabilityDeposit"
-                                component={StabilityDeposit}
+                                name="StabilityMove"
+                                component={StabilityMove}
                                 options={() => ({
-                                    header: () => <StabilityDepositHeader />,
-                                })}
-                            />
-                            <Stack.Screen
-                                name="StabilityWithdraw"
-                                component={StabilityWithdraw}
-                                options={() => ({
-                                    header: () => <StabilityWithdrawHeader />,
+                                    header: () => <StabilityMoveHeader />,
                                 })}
                             />
                             <Stack.Screen
@@ -1389,17 +1347,9 @@ export const MainNavigator = () => {
                                 })}
                             />
                         </Stack.Group>
-                        {/* Put all Overlay/Modal screens here */}
-                        <Stack.Group>
-                            <Stack.Screen
-                                name="SocialRecoveryQrModal"
-                                component={SocialRecoveryQrModal}
-                                options={{
-                                    presentation: 'transparentModal',
-                                    headerShown: false,
-                                }}
-                            />
-                        </Stack.Group>
+                        {/* Put all Overlay/Modal screens inside the Stack.Group */}
+                        {/* <Stack.Group> */}
+                        {/* </Stack.Group> */}
                     </Stack.Group>
                 ) : (
                     <Stack.Group

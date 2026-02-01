@@ -125,6 +125,7 @@ const DEFAULT_DOCUMENT_TYPES = [
     documentTypes.xls,
     documentTypes.xlsx,
     documentTypes.zip,
+    documentTypes.allFiles,
 ]
 
 /**

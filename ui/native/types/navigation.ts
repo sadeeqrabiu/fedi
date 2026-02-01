@@ -98,7 +98,6 @@ export type RootStackParamList = {
     CompleteRecoveryAssist: {
         videoPath: string
         recoveryId: string
-        federationId: Federation['id']
     }
     CompleteSocialBackup: undefined
     CompleteSocialRecovery: undefined
@@ -157,7 +156,6 @@ export type RootStackParamList = {
     LocateSocialRecovery: undefined
     Receive: { federationId: Federation['id'] }
     ReceiveLightning: { federationId: Federation['id'] }
-    ReceiveLnurl: { federationId: Federation['id'] }
     ReceiveSuccess: {
         tx: ReceiveSuccessData
         status?: ReceiveSuccessStatus
@@ -168,7 +166,7 @@ export type RootStackParamList = {
               nextScreenParams?: NavigationArgs
           }
         | undefined
-    RecoveryAssistSuccess: undefined
+    RecoveryAssistConfirmation: { type: 'success' | 'error' }
     RecoveryWalletOptions: undefined
     RecoveryWalletTransfer: undefined
     RecoveryNewWallet: undefined
@@ -182,9 +180,7 @@ export type RootStackParamList = {
     GroupInvite: { groupId: string }
     RecoverFromNonceReuse: undefined
     ScanMemberCode: { inviteToRoomId?: string } | undefined
-    ScanSocialRecoveryCode: { federationId: Federation['id'] }
-    SelectRecoveryFileSuccess: { fileName: string }
-    SelectRecoveryFileFailure: { fileName: string }
+    ScanSocialRecoveryCode: undefined
     Send: { federationId?: Federation['id'] }
     SendOfflineAmount: undefined
     SendOfflineQr: { ecash: string; amount: MSats }
@@ -214,10 +210,8 @@ export type RootStackParamList = {
         amountCents: UsdCents
         federationId: Federation['id']
     }
-    StabilityDeposit: { federationId: Federation['id'] }
     StabilityHistory: { federationId: Federation['id'] }
-    StabilityHome: { federationId: Federation['id'] }
-    StabilityWithdraw: { federationId: Federation['id'] }
+    StabilityMove: { federationId: Federation['id'] }
     StabilityTransfer: {
         recipient?: Spv2ParsedPaymentAddress
         federationId: Federation['id']
@@ -234,7 +228,6 @@ export type RootStackParamList = {
         federationId: Federation['id']
     }
     SocialBackupSuccess: undefined
-    SocialRecoveryQrModal: undefined
     SocialRecoverySuccess: undefined
     SocialRecoveryFailure: undefined
     TabsNavigator:

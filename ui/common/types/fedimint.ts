@@ -46,7 +46,7 @@ export enum TransactionDirection {
     receive = 'receive',
 }
 
-type CommonTxnFields = Pick<
+export type CommonTxnFields = Pick<
     RpcTransactionListEntry,
     | 'createdAt'
     | 'id'
@@ -150,7 +150,7 @@ export interface NodeMap {
 
 export interface Guardian extends Node {
     peerId: number
-    password: string
+    federationId: string
 }
 
 export interface FederationCredentials {

@@ -59,7 +59,7 @@ export const themeDefaults = {
         maxMessageInputHeight: 120,
         recordButtonOuter: 68,
         recordButtonInner: 56,
-        socialBackupCameraWidth: dimensions.width * 0.9,
+        socialBackupCameraWidth: dimensions.width * 0.8,
         socialBackupCameraHeight: dimensions.height * 0.4,
         splashImageSize: 360,
         splashLogoHeight: 32,
@@ -70,6 +70,7 @@ export const themeDefaults = {
         addFederationButtonHeight: 56,
         bubbleButtonSize: 32,
         circleButtonSize: 40,
+        miniAppTitleLineHeight: 20,
     },
     spacing: {
         ...fediTheme.spacing,
@@ -185,6 +186,7 @@ const theme = createTheme({
                     : {}),
                 ...(props.day
                     ? {
+                          backgroundColor: 'transparent',
                           experimental_backgroundImage: `linear-gradient(to bottom, ${fediTheme.dayLinearGradient.join(', ')})`,
                       }
                     : {}),

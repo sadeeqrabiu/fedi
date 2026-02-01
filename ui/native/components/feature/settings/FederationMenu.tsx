@@ -6,6 +6,7 @@ import { Alert, Linking, StyleSheet, View } from 'react-native'
 
 import { useLeaveFederation } from '@fedi/common/hooks/leave'
 import { useDebouncePress } from '@fedi/common/hooks/util'
+import { selectAuthenticatedGuardian } from '@fedi/common/redux'
 import { LoadedFederation } from '@fedi/common/types'
 import {
     getFederationTosUrl,
@@ -13,10 +14,10 @@ import {
     shouldShowSocialRecovery,
 } from '@fedi/common/utils/FederationUtils'
 
+import { useAppSelector } from '../../../state/hooks'
 import { useNativeExport } from '../../../utils/hooks/export'
 import SvgImage from '../../ui/SvgImage'
 import { FederationLogo } from '../federations/FederationLogo'
-import { BetaBadge } from './BetaBadge'
 import SettingsItem from './SettingsItem'
 
 type FederationMenuProps = {
@@ -33,6 +34,9 @@ const FederationMenu = ({ federation }: FederationMenuProps) => {
     const { exportTransactionsAsCsv, isExporting } = useNativeExport(
         federation.id,
     )
+
+    const authenticatedGuardian = useAppSelector(selectAuthenticatedGuardian)
+
     const { validateCanLeaveFederation, handleLeaveFederation } =
         useLeaveFederation({
             t,
@@ -60,6 +64,7 @@ const FederationMenu = ({ federation }: FederationMenuProps) => {
     const [isExpanded, setIsExpanded] = useState(false)
 
     const tosUrl = getFederationTosUrl(federation.meta)
+
     const runSocialBackup = () => {
         navigation.navigate('StartSocialBackup', {
             federationId: federation.id,
@@ -103,6 +108,15 @@ const FederationMenu = ({ federation }: FederationMenuProps) => {
                 onPress={() => handlePress()}
                 isExpanded={isExpanded}>
                 <View key={federation.id} style={style.container}>
+                    {authenticatedGuardian?.federationId === federation.id && (
+                        <SettingsItem
+                            icon="SocialPeople"
+                            label={t('feature.recovery.guardian-access')}
+                            onPress={() => {
+                                navigation.navigate('StartRecoveryAssist')
+                            }}
+                        />
+                    )}
                     <SettingsItem
                         icon="Federation"
                         label={t('feature.federations.federation-details')}
@@ -136,7 +150,6 @@ const FederationMenu = ({ federation }: FederationMenuProps) => {
                         <SettingsItem
                             icon="SocialPeople"
                             label={t('feature.backup.social-backup')}
-                            adornment={<BetaBadge />}
                             onPress={() => runSocialBackup()}
                         />
                     )}

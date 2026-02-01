@@ -1,16 +1,24 @@
 import { useNavigation } from '@react-navigation/native'
 import { NativeStackScreenProps } from '@react-navigation/native-stack'
-import { Theme, useTheme } from '@rneui/themed'
+import { Text, Theme, useTheme } from '@rneui/themed'
 import React, { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Keyboard, StyleSheet } from 'react-native'
+import { ActivityIndicator, Keyboard, StyleSheet } from 'react-native'
 
 import { useWithdrawForm } from '@fedi/common/hooks/amount'
+// import { useSyncCurrencyRatesAndCache } from '@fedi/common/hooks/currency'
+import { useSpv2OurPaymentAddress } from '@fedi/common/hooks/stabilitypool'
+import { selectLoadedFederation } from '@fedi/common/redux/federation'
 
+import ReceiveQr from '../components/feature/receive/ReceiveQr'
+// import RecipientSelector from '../components/feature/stabilitypool/RecipientSelector'
 import StabilityBalanceTile from '../components/feature/stabilitypool/StabilityBalanceTile'
 import { AmountScreen } from '../components/ui/AmountScreen'
-import { Row } from '../components/ui/Flex'
-import { Sats } from '../types'
+import { Column, Row } from '../components/ui/Flex'
+import { SafeAreaContainer } from '../components/ui/SafeArea'
+import { Switcher } from '../components/ui/Switcher'
+import { useAppSelector } from '../state/hooks'
+import { MatrixUser, Sats } from '../types'
 import type { RootStackParamList } from '../types/navigation'
 import { useSyncCurrencyRatesOnFocus } from '../utils/hooks/currency'
 
@@ -19,11 +27,35 @@ export type Props = NativeStackScreenProps<
     'StabilityTransfer'
 >
 
-const StabilityTransfer: React.FC<Props> = ({ route }: Props) => {
-    const { recipient: lockedRecipient, federationId } = route.params
+export type ReceiverType = MatrixUser & { isSelf?: boolean }
 
+type TransferMode = 'send' | 'receive'
+
+const getParams = (params: Props['route']['params']) => {
+    if ('recipient' in params) {
+        // locked recipient from pay to qr
+        return {
+            recipient: params.recipient,
+            federationId: params.federationId,
+        }
+    } else {
+        // still need to select a recipient
+        return { federationId: params.federationId, recipient: null }
+    }
+}
+
+const StabilityTransfer: React.FC<Props> = ({ route }: Props) => {
+    const { recipient: lockedRecipient, federationId: initialFederationId } =
+        getParams(route.params)
+
+    const [federationId, setFederationId] = useState(initialFederationId)
+    const federation = useAppSelector(s =>
+        selectLoadedFederation(s, federationId),
+    )
     const navigation = useNavigation()
     const { t } = useTranslation()
+    const [transferMode, setTransferMode] = useState<TransferMode>('send')
+    const ourPaymentAddress = useSpv2OurPaymentAddress(federationId)
     const {
         inputAmount: amount,
         setInputAmount: setAmount,
@@ -38,11 +70,16 @@ const StabilityTransfer: React.FC<Props> = ({ route }: Props) => {
         setAmount(updatedValue)
     }
 
+    const isValidAmount =
+        (minimumAmount === 0
+            ? amount > minimumAmount
+            : amount >= minimumAmount) && amount <= maximumAmount
+
     const handleSubmit = () => {
+        // if (!receiver && !lockedRecipient) return
+        if (!lockedRecipient) return
         setSubmitAttempts(attempts => attempts + 1)
-        if (amount > maximumAmount || amount < minimumAmount) {
-            return
-        }
+        if (!isValidAmount) return
 
         if (lockedRecipient) {
             navigation.navigate('StabilityConfirmTransfer', {
@@ -51,12 +88,21 @@ const StabilityTransfer: React.FC<Props> = ({ route }: Props) => {
                 federationId,
                 notes,
             })
-        } else {
-            navigation.navigate('StabilityConfirmWithdraw', {
-                amountSats: amount,
-                amountCents: inputAmountCents,
-                federationId,
-            })
+            // } else if (receiver && receiver.isSelf) {
+            //     // Handle as withdraw when sending to self
+            //     navigation.navigate('StabilityConfirmWithdraw', {
+            //         amountSats: amount,
+            //         amountCents: inputAmountCents,
+            //         federationId,
+            //     })
+            // } else if (receiver) {
+            //     // Handle as transfer when sending to other user
+            //     navigation.navigate('StabilityConfirmTransfer', {
+            //         recipient: { matrixUserId: receiver.id },
+            //         amount: inputAmountCents,
+            //         federationId,
+            //         notes,
+            //     })
         }
         Keyboard.dismiss()
     }
@@ -64,41 +110,109 @@ const StabilityTransfer: React.FC<Props> = ({ route }: Props) => {
     useSyncCurrencyRatesOnFocus(federationId)
 
     const [notes, setNotes] = useState('')
+    // const [receiver, setReceiver] = useState<ReceiverType | null>(null)
 
     const { theme } = useTheme()
     const style = styles(theme)
 
-    return (
-        <>
-            <AmountScreen
-                subHeader={
-                    <Row
-                        align="stretch"
-                        fullWidth
-                        style={style.subHeaderContainer}>
-                        <StabilityBalanceTile federationId={federationId} />
-                    </Row>
-                }
-                federationId={federationId}
-                amount={amount}
-                onChangeAmount={onChangeAmount}
-                minimumAmount={minimumAmount}
-                maximumAmount={maximumAmount}
-                submitAttempts={submitAttempts}
-                switcherEnabled={false}
-                lockToFiat={true}
-                verb={t('words.transfer')}
-                buttons={[
+    const headerContent = federation ? (
+        <Column fullWidth gap="md">
+            <Switcher
+                options={[
                     {
-                        title: t('words.confirm'),
-                        onPress: handleSubmit,
-                        disabled: amount === 0,
+                        label: t('words.send'),
+                        value: 'send',
+                    },
+                    {
+                        label: t('words.receive'),
+                        value: 'receive',
                     },
                 ]}
-                notes={notes}
-                setNotes={setNotes}
+                selected={transferMode}
+                onChange={setTransferMode}
             />
-        </>
+        </Column>
+    ) : (
+        <ActivityIndicator />
+    )
+
+    if (transferMode === 'receive') {
+        return (
+            <SafeAreaContainer style={style.container} edges="notop">
+                <Column fullWidth style={style.subHeader}>
+                    {headerContent}
+                    <Column center fullWidth style={style.paymentInfoContainer}>
+                        <Text caption medium center>
+                            ℹ️ {t('phrases.reusable-payment-code')}
+                        </Text>
+                        <Text caption center color={theme.colors.darkGrey}>
+                            {t(
+                                'feature.stabilitypool.reusable-payment-code-guidance',
+                            )}
+                        </Text>
+                    </Column>
+                </Column>
+                {ourPaymentAddress ? (
+                    <ReceiveQr
+                        uri={{
+                            fullString: ourPaymentAddress,
+                            body: ourPaymentAddress,
+                        }}
+                        federationId={federationId}
+                    />
+                ) : null}
+            </SafeAreaContainer>
+        )
+    }
+
+    return (
+        <AmountScreen
+            subHeader={
+                <Column fullWidth style={style.subHeaderContainer}>
+                    {headerContent}
+                    <Row align="stretch" fullWidth>
+                        {federation ? (
+                            <StabilityBalanceTile
+                                badgeLogo="usd"
+                                federation={federation}
+                                onSelectFederation={setFederationId}
+                            />
+                        ) : null}
+                    </Row>
+                </Column>
+            }
+            // content={
+            //     !lockedRecipient ? (
+            //         <RecipientSelector
+            //             receiver={receiver}
+            //             setReceiver={setReceiver}
+            //         />
+            //     ) : null
+            // }
+            federationId={federationId}
+            amount={amount}
+            onChangeAmount={onChangeAmount}
+            minimumAmount={minimumAmount}
+            maximumAmount={maximumAmount}
+            submitAttempts={submitAttempts}
+            switcherEnabled={false}
+            lockToFiat={true}
+            verb={t('words.transfer')}
+            buttons={[
+                {
+                    title: t('words.transfer'),
+                    // title: receiver?.isSelf
+                    // ? t('words.confirm')
+                    // : t('words.transfer'),
+                    onPress: handleSubmit,
+                    disabled:
+                        // amount === 0 || (!receiver && !lockedRecipient),
+                        amount === 0 || !lockedRecipient,
+                },
+            ]}
+            notes={notes}
+            setNotes={setNotes}
+        />
     )
 }
 
@@ -106,10 +220,26 @@ export default StabilityTransfer
 
 const styles = (theme: Theme) =>
     StyleSheet.create({
+        container: {
+            gap: theme.spacing.sm,
+        },
+        subHeader: {
+            paddingTop: theme.spacing.lg,
+            gap: theme.spacing.md,
+        },
         subHeaderContainer: {
             // 1 px to align with the next screen...
             // Thinking it's due to the SafeAreaView behavior on the
             // confirm screen. Not sure. This fixes it for now.
             paddingHorizontal: theme.spacing.lg - 1,
+            gap: theme.spacing.md,
+        },
+        paymentInfoContainer: {
+            padding: theme.spacing.md,
+            paddingHorizontal: theme.spacing.xl,
+            backgroundColor: theme.colors.offWhite100,
+            borderRadius: theme.borders.tileRadius,
+            width: '100%',
+            gap: theme.spacing.xs,
         },
     })

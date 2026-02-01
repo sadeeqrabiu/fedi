@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { selectMatrixAuth, selectMatrixRoomMembers } from '@fedi/common/redux'
 import { MatrixEvent, ReplyMessageData } from '@fedi/common/types'
 import {
+    isCommunityInviteEvent,
     isFileEvent,
     isFederationInviteEvent,
     isFormEvent,
@@ -16,6 +17,7 @@ import {
 
 import { useAppSelector } from '../../hooks'
 import { styled, theme } from '../../styles'
+import { ChatCommunityInviteEvent } from './ChatCommunityInviteEvent'
 import { ChatFederationInviteEvent } from './ChatFederationInviteEvent'
 import { ChatFileEvent } from './ChatFileEvent'
 import { ChatFormEvent } from './ChatFormEvent'
@@ -102,7 +104,15 @@ export const ChatEvent: React.FC<Props> = ({ event, onReplyTap }) => {
     if (isFederationInviteEvent(event)) {
         return (
             <TextContent isMe={isMe}>
-                <ChatFederationInviteEvent event={event} />
+                <ChatFederationInviteEvent event={event} isMe={isMe} />
+            </TextContent>
+        )
+    }
+
+    if (isCommunityInviteEvent(event)) {
+        return (
+            <TextContent isMe={isMe}>
+                <ChatCommunityInviteEvent event={event} isMe={isMe} />
             </TextContent>
         )
     }

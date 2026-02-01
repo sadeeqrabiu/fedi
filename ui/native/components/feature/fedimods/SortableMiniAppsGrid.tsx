@@ -8,6 +8,7 @@ import {
     Text,
     useWindowDimensions,
     Vibration,
+    View,
 } from 'react-native'
 import {
     Gesture,
@@ -27,6 +28,7 @@ import { selectModsVisibility } from '@fedi/common/redux/mod'
 
 import { useAppSelector } from '../../../state/hooks'
 import { FediMod } from '../../../types'
+import { getMiniAppTileMinHeight } from '../../../utils/layout'
 import { Column } from '../../ui/Flex'
 import ShortcutTile from '../home/ShortcutTile'
 import ZendeskBadge from '../support/ZendeskBadge'
@@ -45,6 +47,7 @@ type SortableMiniAppTileProps = {
     dragOffsetShared: SharedValue<{ x: number; y: number }>
     activeAppIdShared: SharedValue<string | undefined>
     miniAppPositionIndices: SharedValue<{ [id: string]: number }>
+    indicesMap: { [id: string]: number }
     isRearranging: boolean
     itemHeight: number
     itemWidth: number
@@ -62,6 +65,7 @@ const SortableMiniAppTile = (props: SortableMiniAppTileProps) => {
         itemWidth,
         miniAppId,
         miniAppPositionIndices,
+        indicesMap,
         renderMiniApp,
     } = props
 
@@ -70,7 +74,7 @@ const SortableMiniAppTile = (props: SortableMiniAppTileProps) => {
     const columns = width / fontScale < 300 ? 2 : 3
     const style = styles(theme, columns)
 
-    const appStyle = useAnimatedStyle(() => {
+    const animatedStyle = useAnimatedStyle(() => {
         const positionIndex = miniAppPositionIndices.value[miniAppId]
         if (positionIndex === undefined) {
             return {}
@@ -89,21 +93,14 @@ const SortableMiniAppTile = (props: SortableMiniAppTileProps) => {
 
         return {
             ...style.shortcut,
-            position: 'absolute',
-            top: 0,
-            left: 0,
             height: itemHeight,
             width: itemWidth,
             transform: [
                 {
-                    translateX: isRearranging
-                        ? withSpring(translateX, SNAPPY_SPRING_CONFIG)
-                        : translateX,
+                    translateX: withSpring(translateX, SNAPPY_SPRING_CONFIG),
                 },
                 {
-                    translateY: isRearranging
-                        ? withSpring(translateY, SNAPPY_SPRING_CONFIG)
-                        : translateY,
+                    translateY: withSpring(translateY, SNAPPY_SPRING_CONFIG),
                 },
                 {
                     scale: isDragging
@@ -116,9 +113,43 @@ const SortableMiniAppTile = (props: SortableMiniAppTileProps) => {
         }
     })
 
+    // This is a workaround to avoid a bug in react-native-reanimated when multiple
+    // Animated.Views with transform styles are at different levels of the view hierarchy
+    //
+    // This construction seems a bit convoluted, but reanimated does not recommend reading shared
+    // values (miniAppPositionIndices) directly since they are meant to be handled in side effect
+    const staticStyle = useMemo(() => {
+        const positionIndex = indicesMap[miniAppId]
+        if (positionIndex === undefined) {
+            return style.shortcut
+        }
+
+        const column = positionIndex % columns
+        const row = Math.floor(positionIndex / columns)
+
+        return {
+            ...style.shortcut,
+            height: itemHeight,
+            width: itemWidth,
+            transform: [
+                { translateX: column * itemWidth },
+                { translateY: row * itemHeight },
+            ],
+        }
+    }, [indicesMap, miniAppId, columns, itemHeight, itemWidth, style.shortcut])
+    let miniAppView = <View style={staticStyle}>{renderMiniApp()}</View>
+    // to trigger the animation bug described above, just make this conditional always true
+    if (isRearranging) {
+        miniAppView = (
+            <Animated.View style={animatedStyle}>
+                {renderMiniApp()}
+            </Animated.View>
+        )
+    }
+
     return (
         <GestureDetector key={miniAppId} gesture={dragGesture}>
-            <Animated.View style={appStyle}>{renderMiniApp()}</Animated.View>
+            {miniAppView}
         </GestureDetector>
     )
 }
@@ -150,7 +181,7 @@ const SortableMiniAppsGrid = (props: SortableMiniAppsGridProps) => {
     const itemWidth = width / columns
     const style = styles(theme, columns)
     const containerHeight = isRearranging ? height * 0.85 : height * 0.8
-    const itemHeight = containerHeight / 6
+    const itemHeight = getMiniAppTileMinHeight(theme, fontScale)
 
     const activeAppIdShared = useSharedValue<string | undefined>(undefined)
     const pendingSwapIndex = useSharedValue<number | undefined>(undefined)
@@ -411,6 +442,7 @@ const SortableMiniAppsGrid = (props: SortableMiniAppsGridProps) => {
                     itemWidth={itemWidth}
                     miniAppId={miniAppId}
                     miniAppPositionIndices={miniAppPositionIndices}
+                    indicesMap={indicesMap}
                     renderMiniApp={() => renderMiniApp(miniAppId)}
                 />
             )
@@ -459,7 +491,12 @@ const styles = (theme: Theme, columns: number) =>
         scrollContainer: {
             flex: 1,
         },
-        shortcut: { width: `${100 / columns}%` },
+        shortcut: {
+            position: 'absolute',
+            width: `${100 / columns}%`,
+            top: 0,
+            left: 0,
+        },
         listContainer: {
             marginTop: theme.spacing.sm,
         },

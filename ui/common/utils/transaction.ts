@@ -7,7 +7,6 @@ import {
     TransactionStatusBadge,
     TransactionDirection,
     UsdCents,
-    ReceiveSuccessData,
     TransactionAmountState,
     TransactionListEntry,
     SelectableCurrency,
@@ -18,29 +17,15 @@ import {
     MultispendFinalized,
 } from '../types'
 import { AmountSymbolPosition, FormattedAmounts } from '../types/amount'
-import {
-    StabilityPoolWithdrawalEvent,
-    StabilityPoolDepositEvent,
-    RpcAmount,
-    RpcStabilityPoolAccountInfo,
-    RpcLockedSeek,
-    SPv2WithdrawalEvent,
-    FiatFXInfo,
-    RpcTransaction,
-} from '../types/bindings'
-import { StabilityPoolState } from '../types/wallet'
+import { FiatFXInfo, RpcTransaction } from '../types/bindings'
 import amountUtils from './AmountUtils'
 import dateUtils from './DateUtils'
 import { getCurrencyCode } from './currency'
-import { FedimintBridge } from './fedimint'
-import { makeLog } from './log'
 import {
     getMultispendInvite,
     isWithdrawalRequestRejected,
     makeNameWithSuffix,
 } from './matrix'
-
-const log = makeLog('common/utils/wallet')
 
 export interface DetailItem {
     label: string
@@ -48,17 +33,6 @@ export interface DetailItem {
     truncated?: boolean
     copyable?: boolean
     copiedMessage?: string
-}
-
-// Helper to distinguish multispend spv2 transfers from non-multispend transfers
-export const isMultispendTxn = (
-    txn: TransactionListEntry,
-): txn is MultispendTransactionListEntry => {
-    return (
-        (txn.kind === 'sPV2TransferOut' || txn.kind === 'sPV2TransferIn') &&
-        'kind' in txn.state &&
-        txn.state.kind === 'multispend'
-    )
 }
 
 export const getTxnDirection = (txn: TransactionListEntry): string => {
@@ -70,30 +44,26 @@ export const getTxnDirection = (txn: TransactionListEntry): string => {
         case 'sPV2Deposit':
         case 'sPV2TransferOut':
             return TransactionDirection.send
-        case 'lnReceive':
-        case 'lnRecurringdReceive':
-        case 'onchainDeposit':
-        case 'oobReceive':
-        case 'spWithdraw':
-        case 'sPV2Withdrawal':
-        case 'sPV2TransferIn':
+        case 'multispend':
+            switch (txn.state) {
+                case 'deposit':
+                    return TransactionDirection.receive
+                case 'withdrawal':
+                    return TransactionDirection.send
+                default:
+                    txn.state satisfies 'groupInvitation' | 'invalid'
+                    return ''
+            }
+        default:
+            txn.kind satisfies
+                | 'lnReceive'
+                | 'lnRecurringdReceive'
+                | 'onchainDeposit'
+                | 'oobReceive'
+                | 'spWithdraw'
+                | 'sPV2Withdrawal'
+                | 'sPV2TransferIn'
             return TransactionDirection.receive
-        default:
-            return TransactionDirection.send
-    }
-}
-
-export const makeMultispendTxnTypeText = (
-    txn: MultispendTransactionListEntry,
-    t: TFunction,
-): string => {
-    switch (txn.state) {
-        case 'withdrawal':
-            return t('phrases.multispend-withdrawal')
-        case 'deposit':
-            return t('phrases.multispend-deposit')
-        default:
-            return t('words.unknown')
     }
 }
 
@@ -117,33 +87,30 @@ export const makeTxnTypeText = (
             return t('feature.stabilitypool.stable-balance')
         case 'sPV2TransferIn':
         case 'sPV2TransferOut':
+            // TODO+TEST: `isMultispendTxn` incorrectly casts transaction types
+            // This should be removed later
             return isMultispendTxn(txn)
                 ? t('words.multispend')
                 : t('feature.stabilitypool.stable-balance')
         case 'oobSend':
         case 'oobReceive':
             return t('words.ecash')
-        default:
-            return t('words.unknown')
+        case 'multispend': {
+            switch (txn.state) {
+                case 'deposit':
+                    return t('words.deposit')
+                case 'withdrawal':
+                    return t('words.withdrawal')
+                default:
+                    // `groupInvitation` and `invalid` are not transaction types
+                    txn.state satisfies 'groupInvitation' | 'invalid'
+                    return t('words.unknown')
+            }
+        }
     }
 }
 
-export const makePendingBalanceText = (
-    t: TFunction,
-    pendingBalance: number,
-    formattedAmount: string,
-): string => {
-    if (pendingBalance > 0) {
-        return t('feature.stabilitypool.deposit-pending', {
-            amount: formattedAmount,
-        })
-    } else {
-        return t('feature.stabilitypool.withdrawal-pending', {
-            amount: formattedAmount,
-        })
-    }
-}
-
+// TODO+TEST: ensure that ALL txn kinds and states are covered
 export const makeTxnDetailTitleText = (
     t: TFunction,
     txn: TransactionListEntry,
@@ -151,48 +118,80 @@ export const makeTxnDetailTitleText = (
     // there should always be a state, but return unknown just in case
     if (!txn.state) return t('words.unknown')
 
-    const direction = getTxnDirection(txn)
-    if (direction === TransactionDirection.send) {
-        if (txn.kind === 'sPV2TransferOut' && isMultispendTxn(txn)) {
-            return t('feature.stabilitypool.you-deposited')
-        } else {
+    switch (txn.kind) {
+        case 'lnPay':
+        case 'spDeposit':
+        case 'oobSend':
+        case 'onchainWithdraw':
+        case 'sPV2Deposit':
             return t('feature.send.you-sent')
-        }
-    }
-    if (txn.kind === 'lnReceive' || txn.kind === 'lnRecurringdReceive') {
-        switch (txn.state?.type) {
-            case 'waitingForPayment':
-                return t('phrases.receive-pending')
-            case 'claimed':
-                return t('feature.receive.you-received')
-            case 'canceled':
-                return t('words.expired')
-            default:
-                return t('phrases.receive-pending')
-        }
-    } else if (txn.kind === 'onchainDeposit') {
-        switch (txn.state?.type) {
-            case 'waitingForTransaction':
-                return t('phrases.address-created')
-            case 'claimed':
-                return t('feature.receive.you-received')
-            default:
-                return t('phrases.receive-pending')
-        }
-    } else if (txn.kind === 'spWithdraw' || txn.kind === 'sPV2Withdrawal') {
-        switch (txn.state?.type) {
-            case 'pendingWithdrawal':
-                return t('phrases.receive-pending')
-            case 'completeWithdrawal':
-            case 'completedWithdrawal':
-                return t('feature.receive.you-received')
-            default:
-                return t('phrases.receive-pending')
-        }
-    } else if (txn.kind === 'sPV2TransferIn' && isMultispendTxn(txn)) {
-        return t('feature.receive.you-received')
-    } else {
-        return t('feature.receive.you-received')
+        case 'sPV2TransferIn':
+        case 'oobReceive':
+            return t('feature.receive.you-received')
+        case 'lnReceive':
+        case 'lnRecurringdReceive':
+            switch (txn.state.type) {
+                case 'claimed':
+                    return t('feature.receive.you-received')
+                case 'canceled':
+                    return t('words.expired')
+                default:
+                    txn.state.type satisfies
+                        | 'created'
+                        | 'funded'
+                        | 'awaitingFunds'
+                        | 'waitingForPayment'
+                    return t('phrases.receive-pending')
+            }
+        case 'onchainDeposit':
+            switch (txn.state.type) {
+                case 'waitingForTransaction':
+                    return t('phrases.address-created')
+                case 'claimed':
+                    return t('feature.receive.you-received')
+                case 'failed':
+                    return t('words.failed')
+                default:
+                    txn.state.type satisfies
+                        | 'confirmed'
+                        | 'waitingForConfirmation'
+                    return t('phrases.receive-pending')
+            }
+        case 'spWithdraw':
+        case 'sPV2Withdrawal':
+            switch (txn.state.type) {
+                case 'pendingWithdrawal':
+                    return t('phrases.receive-pending')
+                case 'completeWithdrawal':
+                case 'completedWithdrawal':
+                    return t('feature.receive.you-received')
+                case 'dataNotInCache':
+                    return t('words.pending')
+                default:
+                    txn.state.type satisfies 'failedWithdrawal'
+                    return t('words.failed')
+            }
+        case 'sPV2TransferOut':
+            switch (txn.state.type) {
+                case 'completedTransfer':
+                    return t('feature.stabilitypool.you-deposited')
+                default:
+                    txn.state.type satisfies 'dataNotInCache'
+                    return t('words.pending')
+            }
+        case 'multispend':
+            switch (txn.state) {
+                case 'deposit':
+                    return t('feature.stabilitypool.you-deposited')
+                case 'withdrawal':
+                    return t('feature.stabilitypool.you-withdrew')
+                default:
+                    txn.state satisfies 'groupInvitation' | 'invalid'
+                    return t('words.unknown')
+            }
+        default:
+            txn satisfies never
+            return t('words.unknown')
     }
 }
 
@@ -246,6 +245,9 @@ export const makeTxnAmountText = (
             amount,
             'none',
         )
+        // TODO+TEST: `txnDisplay` isn't changing the transaction display type correctly
+        // Instead, it is controlled by the `environment.transactionDisplayType` in redux
+        // This should be `formattedSats` instead
         formattedAmount = formattedPrimaryAmount
 
         if (txnDisplay === 'fiat') {
@@ -331,137 +333,6 @@ export const makeTxnAmountText = (
     return `${sign}${formattedAmount}${includeCurrency ? ` ${currency}` : ''}`
 }
 
-export function shouldShowAskFedi(txn: TransactionListEntry): boolean {
-    const direction = getTxnDirection(txn)
-
-    switch (direction) {
-        /* ------------------------------------------------------------------
-         *  SEND-side flows
-         * ------------------------------------------------------------------ */
-        case TransactionDirection.send: {
-            if (txn.kind === 'lnPay') {
-                switch (txn.state?.type) {
-                    case 'created':
-                    case 'funded':
-                    case 'awaitingChange':
-                    case 'waitingForRefund':
-                    case 'canceled':
-                    case 'failed':
-                    case 'refunded':
-                        return true
-                    default:
-                        return false
-                }
-            }
-
-            if (txn.kind === 'onchainWithdraw') {
-                switch (txn.state?.type) {
-                    case 'succeeded':
-                        return false
-                    case 'failed':
-                    default:
-                        return true
-                }
-            }
-
-            if (txn.kind === 'oobSend') {
-                switch (txn.state?.type) {
-                    case 'userCanceledSuccess':
-                    case 'userCanceledProcessing':
-                    case 'refunded':
-                        return true
-                    default:
-                        return false
-                }
-            }
-
-            if (txn.kind === 'spDeposit' || txn.kind === 'sPV2Deposit') {
-                switch (txn.state?.type) {
-                    case 'pendingDeposit':
-                    case 'failedDeposit':
-                        return true
-                    default:
-                        return false
-                }
-            }
-
-            return false
-        }
-
-        /* ------------------------------------------------------------------
-         *  RECEIVE-side flows
-         * ------------------------------------------------------------------ */
-        case TransactionDirection.receive: {
-            if (txn.kind === 'lnReceive') {
-                switch (txn.state?.type) {
-                    case 'canceled':
-                    case 'waitingForPayment':
-                    case 'created':
-                    case 'funded':
-                    case 'awaitingFunds':
-                        return true
-                    default:
-                        return false
-                }
-            } else if (txn.kind === 'lnRecurringdReceive') {
-                switch (txn.state?.type) {
-                    case 'canceled':
-                    case 'waitingForPayment':
-                    case 'funded':
-                    case 'awaitingFunds':
-                        // case 'created':
-                        // TODO: fix bug in fedimint where payments get stuck
-                        // in the created state despite being settled.
-                        return true
-                    default:
-                        return false
-                }
-            }
-
-            if (txn.kind === 'onchainDeposit') {
-                switch (txn.state?.type) {
-                    case 'waitingForConfirmation':
-                    case 'waitingForTransaction':
-                    case 'confirmed':
-                    case 'failed':
-                        return true
-                    default:
-                        return false
-                }
-            }
-
-            if (txn.kind === 'spWithdraw' || txn.kind === 'sPV2Withdrawal') {
-                switch (txn.state?.type) {
-                    case 'dataNotInCache':
-                    case 'pendingWithdrawal':
-                    case 'failedWithdrawal':
-                        return true
-                    default:
-                        return false
-                }
-            }
-
-            if (txn.kind === 'oobReceive') {
-                switch (txn.state?.type) {
-                    case 'created':
-                    case 'issuing':
-                    case 'failed':
-                        return true
-                    default:
-                        return false
-                }
-            }
-
-            // Fallback – any other receive kind
-            return false
-        }
-
-        //  Unknown / unexpected direction
-        default:
-            return false
-    }
-}
-
 export const makeTxnStatusText = (
     t: TFunction,
     txn: TransactionListEntry,
@@ -524,6 +395,7 @@ export const makeTxnStatusText = (
                     case 'completeDeposit':
                     case 'completedDeposit':
                         return t('words.deposit')
+                    // TODO+TEST: Cover test cases for failedDeposit and dataNotInCache
                     default:
                         return t('words.deposit')
                 }
@@ -558,6 +430,7 @@ export const makeTxnStatusText = (
                         return t('words.pending')
                     case 'canceled':
                         return t('words.expired')
+                    // TODO+TEST: Figure out which 'bug' this is in reference to + remove?
                     case 'created': // Remove this once bug is fixed
                     case 'claimed':
                         return t('words.received')
@@ -590,6 +463,7 @@ export const makeTxnStatusText = (
                     case 'dataNotInCache':
                     case 'pendingWithdrawal':
                         return t('words.pending')
+                    // TODO+TEST: Cover test cases for failedWithdrawal
                     default:
                         return t('words.withdrawal')
                 }
@@ -605,12 +479,15 @@ export const makeTxnStatusText = (
                     default:
                         return ''
                 }
+                // TODO+TEST: Cover test cases for other multispend transactions
             } else if (txn.kind === 'sPV2TransferIn' && isMultispendTxn(txn)) {
                 return t('words.withdrawal')
             } else {
+                // TODO+TEST: We should probably not fall back to a success state
                 return t('words.received')
             }
         default:
+            // TODO+TEST: we should probably not fall back to an empty string
             return ''
     }
 }
@@ -679,10 +556,12 @@ export const makeTxnStatusBadge = (
                     case 'completedDeposit':
                         badge = 'outgoing'
                         break
+                    // TODO+TEST: Handle `failedDeposit` state
                     default:
                         break
                 }
             } else if (txn.kind === 'sPV2TransferOut') {
+                // TODO+TEST: Handle `dataNotInCache` state and different kinds (sp transfer ui, multispend, etc)
                 badge = 'outgoing'
                 break
             }
@@ -709,6 +588,7 @@ export const makeTxnStatusBadge = (
                 switch (txn.state?.type) {
                     case 'claimed':
                     case 'created': // Remove this once bug is fixed
+                        // TODO+TEST: Identify what "bug" refers to and set to "pending" if the bug is fixed
                         badge = 'incoming'
                         break
                     case 'canceled':
@@ -748,6 +628,7 @@ export const makeTxnStatusBadge = (
                     case 'completedWithdrawal':
                         badge = 'incoming'
                         break
+                    // TODO+TEST: Handle `failedWithdrawal` state
                     case 'pendingWithdrawal':
                     default:
                         badge = 'pending'
@@ -933,6 +814,7 @@ export const makeTxnDetailItems = (
     if (
         (txn.kind === 'lnReceive' ||
             txn.kind === 'lnPay' ||
+            // TODO+TEST: lnRecurringdReceive does not have an ln_invoice field
             txn.kind === 'lnRecurringdReceive') &&
         'ln_invoice' in txn
     ) {
@@ -1012,8 +894,11 @@ export const makeTxnDetailItems = (
     return items
 }
 
+// TODO+TEST: Consider using within `makeTxnDetailTitleText`?
+// Can remain as its own function but worth unifying to avoid the `words.unknown` fallback
 export const makeStabilityTxnDetailTitleText = (
     t: TFunction,
+    // TODO+TEST: Consider using a type only including stability transactions to avoid the `words.unknown` fallback
     txn: TransactionListEntry,
 ) => {
     if (txn.kind === 'spDeposit' || txn.kind === 'sPV2Deposit') {
@@ -1034,6 +919,7 @@ export const makeStabilityTxnDetailTitleText = (
     return t('words.unknown')
 }
 
+// TODO+TEST: Consider merging/using this from makeTxnDetailItems as it takes the same inputs and a lot of logic seems duplicated
 export const makeStabilityTxnDetailItems = (
     t: TFunction,
     txn: TransactionListEntry,
@@ -1170,6 +1056,7 @@ export const makeMultispendTxnStatusText = (
     )
         return t('words.unknown')
 
+    // TODO+TEST: Perhaps using `is Type` assertion functions would be better than `in txn.event`
     if ('depositNotification' in txn.event)
         return csvExport ? t('words.complete') : t('words.deposit')
     if ('withdrawalRequest' in txn.event) {
@@ -1206,6 +1093,7 @@ export const makeMultispendTxnDetailItems = (
         value: t('words.multispend'),
     })
 
+    // TODO+TEST: Inconsistent time format compared to other *TxnDetailItems functions
     items.push({
         label: t('words.time'),
         value: dateUtils.formatTimestamp(
@@ -1257,25 +1145,6 @@ export const makeMultispendTxnDetailItems = (
     return items
 }
 
-export const makeReceiveSuccessMessage = (
-    t: TFunction,
-    tx: ReceiveSuccessData,
-    status: 'success' | 'pending',
-) => {
-    if (status === 'pending') {
-        return {
-            message: t('feature.receive.payment-received-pending'),
-            subtext: t('feature.receive.payment-received-pending-subtext'),
-        }
-    } else if ('onchain_address' in tx) {
-        return { message: t('feature.receive.pending-transaction') }
-    } else {
-        return {
-            message: t('feature.receive.you-received'),
-        }
-    }
-}
-
 // Maps status badges to amount states
 export const TransactionAmountStateMap = {
     incoming: 'settled',
@@ -1290,343 +1159,159 @@ export const makeTransactionAmountState = (txn: TransactionListEntry) => {
     return TransactionAmountStateMap[badge] satisfies TransactionAmountState
 }
 
-// Calculate the actual amount to withdraw given a requested amount
-export const calculateStabilityPoolWithdrawal = (
-    amount: MSats,
-    btcUsdExchangeRate: number,
-    totalLockedCents: UsdCents,
-    totalStagedMsats: MSats,
-    stableBalanceCents: UsdCents,
-) => {
-    // if we have enough pending balance to cover the withdrawal
-    // no need to calculate basis points on stable balance
-    if (amount <= totalStagedMsats) {
-        log.info(
-            `withdrawing ${amount} msats from ${totalStagedMsats} staged msats`,
-        )
-        // if there is a sub-1sat difference in staged seeks remaining, should be safe to just use the full pending balance to sweep the msats in with the withdrawal
-        const unlockedAmount =
-            totalStagedMsats - amount < 1000 ? totalStagedMsats : amount
-        return { lockedBps: 0, unlockedAmount }
-    } else {
-        // if there is more to withdraw, unlock the full pending balance
-        // and calculate what portion of the stable balance
-        // is needed to fulfill the withdrawal amount
-        const unlockedAmount = totalStagedMsats
-        const remainingWithdrawal = Number((amount - unlockedAmount).toFixed(2))
-        log.info(
-            `need to withdraw ${remainingWithdrawal} msats from locked balance`,
-        )
-        const remainingWithdrawalUsd = amountUtils.msatToFiat(
-            remainingWithdrawal as MSats,
-            btcUsdExchangeRate,
-        )
-        const remainingWithdrawalCents = remainingWithdrawalUsd * 100
-        log.info('remainingWithdrawalCents', remainingWithdrawalCents)
-
-        // ensure this is max 10_000, which represents 100% of the locked balance
-        const lockedBps = Math.min(
-            Number(
-                (
-                    (remainingWithdrawalCents * 10_000) /
-                    totalLockedCents
-                ).toFixed(0),
-            ),
-            10_000,
-        )
-
-        // TODO: remove this? do we need any sweep conditions here at all?
-        // If there is <=1 cent leftover after this withdrawal
-        // just withdraw the full 10k basis points on the locked balance
-        // const centsAfterWithdrawal: UsdCents = (stableBalanceCents -
-        //     remainingWithdrawalCents) as UsdCents
-        // console.debug('centsAfterWithdrawal', centsAfterWithdrawal)
-        // lockedBps =
-        //     centsAfterWithdrawal <= 1
-        //         ? 10000
-        //         : Number(
-        //               (
-        //                   Number(
-        //                       (remainingWithdrawalCents * 10000).toFixed(0),
-        //                   ) / totalLockedCents
-        //               ).toFixed(0),
-        //           )
-
-        log.info('decreaseStableBalance', {
-            lockedBps,
-            unlockedAmount,
-            totalStagedMsats,
-            stableBalanceCents,
-        })
-        return { lockedBps, unlockedAmount }
-    }
-}
-
-export const calculateStabilityPoolWithdrawalV2 = (
-    amountCents: UsdCents,
-    totalBalanceCents: UsdCents,
-) => {
-    // If there is <= 3 (a few) cents leftover after this withdrawal
-    // just withdraw the full 10k basis points on the locked balance
-    const centsAfterWithdrawal = (totalBalanceCents - amountCents) as UsdCents
-    if (centsAfterWithdrawal <= 3) {
-        return { withdrawAll: true, amountCents: 0 as UsdCents }
-    } else {
-        return { withdrawAll: false, amountCents }
-    }
-}
-
-export const handleStabilityPoolWithdrawal = async (
-    lockedBps: number,
-    unlockedAmount: MSats,
-    fedimint: FedimintBridge,
-    federationId: string,
-) => {
-    const operationId = await fedimint.stabilityPoolWithdraw(
-        lockedBps,
-        unlockedAmount,
-        federationId,
-    )
-    return new Promise<StabilityPoolWithdrawalEvent>((resolve, reject) => {
-        const unsubscribeOperation = fedimint.addListener(
-            'stabilityPoolWithdrawal',
-            (event: StabilityPoolWithdrawalEvent) => {
-                if (
-                    event.federationId !== federationId ||
-                    event.operationId !== operationId
-                ) {
-                    return
-                }
-                log.info(
-                    'StabilityPoolWithdrawalEvent.state',
-                    event.operationId,
-                    event.state,
-                )
-                // Withdrawals may return the success state quickly if 100% of it was covered from stagedSeeks
-                // Otherwise, cancellationAccepted is the appropriate state to resolve
-                if (
-                    event.state === 'success' ||
-                    event.state === 'cancellationAccepted'
-                ) {
-                    unsubscribeOperation()
-                    resolve(event)
-                } else if (
-                    typeof event.state === 'object' &&
-                    ('txRejected' in event.state ||
-                        'cancellationSubmissionFailure' in event.state)
-                ) {
-                    unsubscribeOperation()
-                    reject('Transaction rejected')
-                }
-            },
-        )
-    })
-}
-
-export const handleSpv2Withdrawal = async (
-    amount: UsdCents,
-    fedimint: FedimintBridge,
-    federationId: string,
-    withdrawAll = false,
-) => {
-    log.info('Withdrawal', {
-        withdrawAll,
-        amount,
-    })
-    const operationId = withdrawAll
-        ? await fedimint.spv2WithdrawAll(federationId)
-        : await fedimint.spv2Withdraw(federationId, amount)
-
-    log.info('Withdrawal', { operationId })
-    return new Promise<SPv2WithdrawalEvent>((resolve, reject) => {
-        const unsubscribeOperation = fedimint.addListener(
-            'spv2Withdrawal',
-            (event: SPv2WithdrawalEvent) => {
-                if (
-                    event.federationId !== federationId ||
-                    event.operationId !== operationId
-                ) {
-                    return
-                }
-                log.info(
-                    'SPv2WithdrawalEvent.state',
-                    event.operationId,
-                    event.state,
-                )
-                // Withdrawals may return the success state quickly if 100% of it was covered from stagedSeeks
-                // Otherwise, cancellationAccepted is the appropriate state to resolve
-                if (
-                    event.state === 'unlockTxAccepted' ||
-                    (typeof event.state === 'object' &&
-                        'unlockTxAccepted' in event.state)
-                ) {
-                    unsubscribeOperation()
-                    resolve(event)
-                } else if (
-                    typeof event.state === 'object' &&
-                    ('unlockTxRejected' in event.state ||
-                        'unlockProcessingError' in event.state ||
-                        'withdrawalTxRejected' in event.state)
-                ) {
-                    unsubscribeOperation()
-                    reject('Transaction rejected')
-                }
-            },
-        )
-    })
-}
-
-export const calculateStabilityPoolDeposit = (
-    amount: RpcAmount,
-    ecashBalance: MSats,
-    maxAllowedFeeRate: number,
-): MSats => {
-    // Add some fee padding to resist downside price leakage while deposits confirm
-    // arbitrarily we just add the estimated fees for the first 10 cycles
-    const maxFeeRateFraction = Number(
-        (maxAllowedFeeRate / 1_000_000_000).toFixed(9),
-    )
-    const maxFirstCycleFee = Number((amount * maxFeeRateFraction).toFixed(0))
-
-    // Min leakage padding of 1 sat or first 10 cycle fees
-    const leakagePadding = Math.max(
-        1000,
-        Number((10 * maxFirstCycleFee).toFixed(0)),
-    )
-
-    const amountPlusPadding = Number((amount + leakagePadding).toFixed(0))
-
-    // Make sure total with fee padding doesn't exceed ecash balance
-    const amountToDeposit = Math.min(ecashBalance, amountPlusPadding) as MSats
-
-    // When depositing, the fedi fee is added to the deposit amount
-
-    log.info('calculateStabilityPoolDeposit', {
-        amount,
-        ecashBalance,
-        maxAllowedFeeRate,
-        leakagePadding,
-        amountToDeposit,
-    })
-
-    return amountToDeposit
-}
-
-export const handleStabilityPoolDeposit = async (
-    amount: MSats,
-    fedimint: FedimintBridge,
-    federationId: string,
-): Promise<StabilityPoolDepositEvent> => {
-    const operationId = await fedimint.stabilityPoolDepositToSeek(
-        amount,
-        federationId,
-    )
-
-    return new Promise<StabilityPoolDepositEvent>((resolve, reject) => {
-        const unsubscribeOperation = fedimint.addListener(
-            'stabilityPoolDeposit',
-            (event: StabilityPoolDepositEvent) => {
-                if (
-                    event.federationId === federationId &&
-                    event.operationId === operationId
-                ) {
-                    log.info(
-                        'StabilityPoolDepositEvent.state',
-                        event.operationId,
-                        event.state,
-                    )
-                    if (event.state === 'txAccepted') {
-                        unsubscribeOperation()
-                        resolve(event)
-                    } else if (
-                        typeof event.state === 'object' &&
-                        'txRejected' in event.state
-                    ) {
-                        unsubscribeOperation()
-                        reject('Transaction rejected')
-                    }
-                }
-            },
-        )
-    })
-}
-
-export const handleSpv2Deposit = async (
-    amount: MSats,
-    fedimint: FedimintBridge,
-    federationId: string,
-): Promise<StabilityPoolDepositEvent> => {
-    const operationId = await fedimint.spv2DepositToSeek(amount, federationId)
-
-    return new Promise<StabilityPoolDepositEvent>((resolve, reject) => {
-        const unsubscribeOperation = fedimint.addListener(
-            'spv2Deposit',
-            (event: StabilityPoolDepositEvent) => {
-                if (
-                    event.federationId === federationId &&
-                    event.operationId === operationId
-                ) {
-                    log.info(
-                        'spv2DepositEvent.state',
-                        event.operationId,
-                        event.state,
-                    )
-                    if (event.state === 'txAccepted') {
-                        unsubscribeOperation()
-                        resolve(event)
-                    } else if (
-                        typeof event.state === 'object' &&
-                        'txRejected' in event.state
-                    ) {
-                        unsubscribeOperation()
-                        reject('Transaction rejected')
-                    }
-                }
-            },
-        )
-    })
-}
-
-/** reorganize SPv1 AccountInfo to match the shape of SPv2 */
-export const coerceLegacyAccountInfo = (
-    accountInfo: RpcStabilityPoolAccountInfo,
-    // price in cents
-    price: number,
-): StabilityPoolState => {
-    // SPv2 aggregates stagedSeeks into a combined stagedBalance
-    const stagedBalance = accountInfo.stagedSeeks.reduce(
-        (result, ss) => Number((result + ss).toFixed(0)),
-        0,
-    ) as MSats
-
-    // SPv2 aggregates lockedSeeks into a combined lockedBalance
-    const lockedBalance = accountInfo.lockedSeeks.reduce(
-        (result: number, ls: RpcLockedSeek) => {
-            const { currCycleBeginningLockedAmount } = ls
-            return result + currCycleBeginningLockedAmount
-        },
-        0,
-    ) as MSats
-
-    const lockedBalanceCents = (lockedBalance * price) / 10 ** 11
-    const pendingUnlockRequestCents = Math.floor(
-        (lockedBalanceCents * (accountInfo.stagedCancellation ?? 0)) / 10000,
-    )
-
-    return {
-        currCycleStartPrice: price,
-        stagedBalance,
-        lockedBalance,
-        idleBalance: accountInfo.idleBalance,
-        // Cents
-        pendingUnlockRequest: pendingUnlockRequestCents,
-    }
-}
-
 // temporary type helper until RpcTransaction and RpcTransactionListEntry are reconciled bridge-side
 export const coerceTxn = (txn: RpcTransaction): TransactionListEntry => {
     return {
         ...txn,
         createdAt: txn.outcomeTime || 0,
+    }
+}
+
+// Helper to distinguish multispend spv2 transfers from non-multispend transfers
+// TODO+TEST: Transactions of kind "sPV2TransferOut" and "sPV2TransferIn" are absolutely NOT assignable to MultispendTransactionListEntry
+// Additionally, this util function doesn't even properly work for `MultispendTransactionListEntry`s!
+export const isMultispendTxn = (
+    txn: TransactionListEntry,
+): txn is MultispendTransactionListEntry => {
+    return (
+        // `Extract<TransactionListEntry, { kind: 'sPV2TransferOut' | 'sPV2TransferIn' }>` is not assignable to `Extract<TransactionListEntry, { kind: 'multispend' }>` and should not be treated as such
+        (txn.kind === 'sPV2TransferOut' || txn.kind === 'sPV2TransferIn') &&
+        'kind' in txn.state &&
+        txn.state.kind === 'multispend'
+    )
+}
+
+export function shouldShowAskFedi(txn: TransactionListEntry): boolean {
+    const direction = getTxnDirection(txn)
+
+    switch (direction) {
+        /* ------------------------------------------------------------------
+         *  SEND-side flows
+         * ------------------------------------------------------------------ */
+        case TransactionDirection.send: {
+            if (txn.kind === 'lnPay') {
+                switch (txn.state?.type) {
+                    case 'created':
+                    case 'funded':
+                    case 'awaitingChange':
+                    case 'waitingForRefund':
+                    case 'canceled':
+                    case 'failed':
+                    case 'refunded':
+                        return true
+                    // TODO+TEST: Should we hide the button for if `txn.state.type` is undefined?
+                    // We should either use a whitelist of success states or just handle all states to avoid confusion
+                    default:
+                        return false
+                }
+            }
+
+            if (txn.kind === 'onchainWithdraw') {
+                switch (txn.state?.type) {
+                    case 'succeeded':
+                        return false
+                    case 'failed':
+                    default:
+                        return true
+                }
+            }
+
+            if (txn.kind === 'oobSend') {
+                switch (txn.state?.type) {
+                    case 'userCanceledSuccess':
+                    case 'userCanceledProcessing':
+                    case 'refunded':
+                        return true
+                    // TODO+TEST: we shouldn't hide the button if `txn.state.type` is undefined
+                    default:
+                        return false
+                }
+            }
+
+            if (txn.kind === 'spDeposit' || txn.kind === 'sPV2Deposit') {
+                switch (txn.state?.type) {
+                    case 'pendingDeposit':
+                    case 'failedDeposit':
+                        return true
+                    // TODO+TEST: Need to handle `dataNotInCache` states and show the "Ask Fedi" button for those
+                    default:
+                        return false
+                }
+            }
+
+            return false
+        }
+
+        /* ------------------------------------------------------------------
+         *  RECEIVE-side flows
+         * ------------------------------------------------------------------ */
+        case TransactionDirection.receive: {
+            if (txn.kind === 'lnReceive') {
+                switch (txn.state?.type) {
+                    case 'canceled':
+                    case 'waitingForPayment':
+                    case 'created':
+                    case 'funded':
+                    case 'awaitingFunds':
+                        return true
+                    default:
+                        return false
+                }
+            } else if (txn.kind === 'lnRecurringdReceive') {
+                switch (txn.state?.type) {
+                    case 'canceled':
+                    case 'waitingForPayment':
+                    case 'funded':
+                    case 'awaitingFunds':
+                        // case 'created':
+                        // TODO: fix bug in fedimint where payments get stuck
+                        // in the created state despite being settled.
+                        return true
+                    default:
+                        return false
+                }
+            }
+
+            if (txn.kind === 'onchainDeposit') {
+                switch (txn.state?.type) {
+                    case 'waitingForConfirmation':
+                    case 'waitingForTransaction':
+                    case 'confirmed':
+                    case 'failed':
+                        return true
+                    default:
+                        return false
+                }
+            }
+
+            if (txn.kind === 'spWithdraw' || txn.kind === 'sPV2Withdrawal') {
+                switch (txn.state?.type) {
+                    case 'dataNotInCache':
+                    case 'pendingWithdrawal':
+                    case 'failedWithdrawal':
+                        return true
+                    default:
+                        return false
+                }
+            }
+
+            if (txn.kind === 'oobReceive') {
+                switch (txn.state?.type) {
+                    case 'created':
+                    case 'issuing':
+                    case 'failed':
+                        return true
+                    default:
+                        return false
+                }
+            }
+
+            // Fallback – any other receive kind
+            return false
+        }
+
+        //  Unknown / unexpected direction
+        default:
+            return false
     }
 }

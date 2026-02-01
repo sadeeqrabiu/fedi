@@ -12,7 +12,6 @@ import {
     setShouldLockDevice,
     refreshOnboardingStatus,
     selectOnboardingCompleted,
-    selectMatrixAuth,
     setAppFlavor,
     selectEventListenersReady,
 } from '@fedi/common/redux'
@@ -21,18 +20,15 @@ import {
     DeviceRegistrationEvent,
     PanicEvent,
 } from '@fedi/common/types/bindings'
-import { isDev } from '@fedi/common/utils/environment'
 import { formatErrorMessage } from '@fedi/common/utils/format'
 import { makeLog } from '@fedi/common/utils/log'
 
-import { version } from '../../package.json'
-import { homeRoute, onboardingJoinRoute } from '../constants/routes'
 import { useAppDispatch, useAppSelector } from '../hooks'
 import { fedimint, initializeBridge } from '../lib/bridge'
 import { getAppFlavor } from '../lib/bridge/worker'
 import { keyframes, styled, theme } from '../styles'
-import { generateDeviceId, isNightly } from '../utils/browserInfo'
-import { isDeepLink, getDeepLinkPath } from '../utils/linking'
+import { generateDeviceId } from '../utils/browserInfo'
+import { getHashParams } from '../utils/linking'
 import { Redirect } from './Redirect'
 import { Text } from './Text'
 
@@ -45,7 +41,7 @@ interface Props {
 export const FediBridgeInitializer: React.FC<Props> = ({ children }) => {
     const dispatch = useAppDispatch()
     const { t } = useTranslation()
-    const { asPath, pathname, query } = useRouter()
+    const { asPath, pathname } = useRouter()
 
     const hasLoadedStorage = useAppSelector(selectStorageIsReady)
     const eventListenersReady = useAppSelector(selectEventListenersReady)
@@ -55,7 +51,6 @@ export const FediBridgeInitializer: React.FC<Props> = ({ children }) => {
         s => s.recovery.deviceIndexRequired,
     )
     const onboardingCompleted = useAppSelector(selectOnboardingCompleted)
-    const matrixAuth = useAppSelector(selectMatrixAuth)
 
     const tRef = useUpdatingRef(t)
     const dispatchRef = useUpdatingRef(dispatch)
@@ -74,7 +69,11 @@ export const FediBridgeInitializer: React.FC<Props> = ({ children }) => {
                 const deviceId = await dispatchRef
                     .current(initializeDeviceIdWeb({ deviceId: newDeviceId }))
                     .unwrap()
-                dispatchRef.current(initializePwaVersion({ version }))
+                dispatchRef.current(
+                    initializePwaVersion({
+                        version: process.env.NEXT_PUBLIC_APP_VERSION ?? '0.0.0',
+                    }),
+                )
                 const appFlavor = getAppFlavor()
                 dispatchRef.current(setAppFlavor(appFlavor))
                 log.info('initializing bridge with deviceId', deviceId)
@@ -128,19 +127,6 @@ export const FediBridgeInitializer: React.FC<Props> = ({ children }) => {
         }
     }, [dispatchRef])
 
-    // this is dev + nightly only logic to force an error if the production homeserver is still being used
-    // TODO: remove this after a few months after all nightly users have updated & migrated
-    useEffect(() => {
-        if ((isNightly() || isDev()) && matrixAuth && matrixAuth.userId) {
-            const [, homeserver] = matrixAuth.userId.split(':')
-            if (homeserver !== 'staging.m1.8fa.in') {
-                setError(
-                    'This is an expected nightly only error intentionally forced to ensure clean metrics. Please uninstall & recover from seed.\n',
-                )
-            }
-        }
-    }, [matrixAuth])
-
     if (isLoading) {
         return (
             <Content>
@@ -190,38 +176,23 @@ export const FediBridgeInitializer: React.FC<Props> = ({ children }) => {
         return <Redirect path="/onboarding/recover/social" />
     }
 
-    // Handle deep links
-    if (isDeepLink(window.location.href)) {
-        return <Redirect path={getDeepLinkPath(window.location.href)} />
-    }
-
-    // If onboarding is not completed, redirect to Welcome page
-    // but allow access to recovery routes
-    // (Note: we could move all recovery pages out of /onboarding route and into /recover)
     if (
         !onboardingCompleted &&
         pathname !== '/' &&
         !asPath.includes('recover')
     ) {
-        // Preserve any query string or hash params when redirecting to Welcome page
-        const params = window.location.search || window.location.hash
-        return <Redirect path={`/${params}`} />
-    }
+        // Preserve any query string or hash params when redirecting to Welcome/Splash page
+        const url = new URL(window.location.href)
+        const screen = url.pathname.replace(/^\/+/, '')
+        const id = url.searchParams.get('id') ?? getHashParams(url.hash).id
 
-    // If invite code in query string but user has already onboarded
-    // then go straight to join federation page
-    if (query.invite_code && pathname === '/' && onboardingCompleted) {
-        return (
-            <Redirect
-                path={`${onboardingJoinRoute(String(query.invite_code))}`}
-            />
-        )
-    }
+        const params = new URLSearchParams({ screen })
 
-    // If user has onboarded and no invite code in query string then
-    // redirect user to /home
-    if (onboardingCompleted && !query.invite_code && pathname === '/') {
-        return <Redirect path={homeRoute} />
+        if (id) {
+            params.set('id', id)
+        }
+
+        return <Redirect path={`/#${params.toString()}`} />
     }
 
     return <FedimintProvider fedimint={fedimint}>{children}</FedimintProvider>

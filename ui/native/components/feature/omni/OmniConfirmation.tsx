@@ -7,16 +7,18 @@ import { useFedimint } from '@fedi/common/hooks/fedimint'
 import { useToast } from '@fedi/common/hooks/toast'
 import {
     selectAreAllFederationsRecovering,
+    selectFeatureFlag,
     selectLoadedFederations,
-    selectShouldShowStablePaymentAddress,
+    setGuardianAssist,
 } from '@fedi/common/redux'
+import { findAuthenticatedFederation } from '@fedi/common/utils/FederationUtils'
 import { lnurlAuth } from '@fedi/common/utils/lnurl'
 import {
     BLOCKED_PARSER_TYPES_BEFORE_FEDERATION,
     BLOCKED_PARSER_TYPES_DURING_RECOVERY,
 } from '@fedi/common/utils/parser'
 
-import { useAppSelector } from '../../../state/hooks'
+import { useAppSelector, useAppDispatch } from '../../../state/hooks'
 import { resetToWallets } from '../../../state/navigation'
 import {
     AnyParsedData,
@@ -42,6 +44,7 @@ export const OmniConfirmation = <T extends AnyParsedData>({
     onSuccess,
 }: Props<T>) => {
     const { t } = useTranslation()
+    const dispatch = useAppDispatch()
     const toast = useToast()
     const fedimint = useFedimint()
     const navigation = useNavigation()
@@ -50,15 +53,9 @@ export const OmniConfirmation = <T extends AnyParsedData>({
     const areAllFederationsRecovering = useAppSelector(
         selectAreAllFederationsRecovering,
     )
-    const shouldShowStablePaymentAddress = useAppSelector(state => {
-        if (parsedData.type !== ParserDataType.StabilityAddress) return false
-        return selectShouldShowStablePaymentAddress(
-            state,
-            parsedData.data.federation.type === 'joined'
-                ? parsedData.data.federation.federationId
-                : undefined,
-        )
-    })
+    const spTransferFlag = useAppSelector(s =>
+        selectFeatureFlag(s, 'sp_transfer_ui'),
+    )
 
     // OmniConfirmation can be rendered ourside of StackNavigator, so `replace`
     // is not always available, so fall back to navigate. Cast as NavigationHook
@@ -227,7 +224,7 @@ export const OmniConfirmation = <T extends AnyParsedData>({
                 }
             case ParserDataType.StabilityAddress:
                 // don't parse if feature flag is off
-                if (!shouldShowStablePaymentAddress)
+                if (!spTransferFlag === null)
                     return {
                         contents: {
                             icon: 'ScanSad',
@@ -238,15 +235,12 @@ export const OmniConfirmation = <T extends AnyParsedData>({
                 return {
                     contents: {
                         title: t('feature.omni.confirm-send-stability'),
-                        icon:
-                            parsedData.data.federation.type === 'joined'
-                                ? 'Usd'
-                                : undefined,
+                        icon: 'Usd',
                         body: (
                             <OmniSendStability
                                 parsed={parsedData.data}
                                 onContinue={() =>
-                                    // if the user is joining the fedration after scanning a sp payment address
+                                    // if the user is joining the federation after scanning a sp payment address
                                     // they likely won't have any stable balance yet so send them to
                                     // the wallets screen instead of StabilityTransfer
                                     navigation.dispatch(resetToWallets())
@@ -348,6 +342,53 @@ export const OmniConfirmation = <T extends AnyParsedData>({
                         handleNavigate('SendOnChainAmount', {
                             parsedData,
                         })
+                    },
+                }
+            case ParserDataType.FedimintGuardian:
+                return {
+                    contents: {
+                        icon: 'FedimintLogo',
+                        title: t('feature.omni.confirm-fedimint-guardian'),
+                    },
+                    continueOnPress: () => {
+                        const { peerId, password, name, url } = parsedData.data
+
+                        const authenticatedFederation =
+                            findAuthenticatedFederation(walletFederations, url)
+
+                        if (!authenticatedFederation) {
+                            onGoBack()
+                            toast.error(
+                                t,
+                                'feature.recovery.recovery-assist-federation-not-found',
+                            )
+                            return
+                        }
+
+                        dispatch(
+                            setGuardianAssist({
+                                fedimint,
+                                federationId: authenticatedFederation.id,
+                                peerId,
+                                name,
+                                url,
+                                password,
+                            }),
+                        )
+                            .then(() => {
+                                handleNavigate('StartRecoveryAssist')
+                            })
+                            .catch(e => {
+                                onGoBack()
+                                toast.error(t, e)
+                            })
+                    },
+                }
+            case ParserDataType.FedimintRecovery:
+                return {
+                    contents: {
+                        icon: 'FedimintLogo',
+                        title: t('feature.omni.confirm-fedimint-recovery'),
                     },
                 }
         }

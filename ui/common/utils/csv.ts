@@ -20,10 +20,9 @@ import { findUserDisplayName } from './matrix'
 import {
     getTxnDirection,
     makeMultispendTxnStatusText,
-    makeMultispendTxnTypeText,
     makeTxnStatusText,
     makeTxnTypeText,
-} from './wallet'
+} from './transaction'
 
 type CSVColumns<T> = { name: string; getValue: (item: T) => string | number }[]
 
@@ -162,7 +161,12 @@ export function makeMultispendTransactionHistoryCSV(
         },
         {
             name: 'Type',
-            getValue: tx => makeMultispendTxnTypeText(tx, t),
+            getValue: tx =>
+                tx.state === 'withdrawal'
+                    ? t('phrases.multispend-withdrawal')
+                    : tx.state === 'deposit'
+                      ? t('phrases.multispend-deposit')
+                      : t('words.unknown'),
         },
         {
             name: 'Status',
