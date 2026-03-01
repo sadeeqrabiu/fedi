@@ -23,6 +23,7 @@ import { useMessageInputState } from '@fedi/common/hooks/chat'
 import { useFedimint } from '@fedi/common/hooks/fedimint'
 import { useMentionInput } from '@fedi/common/hooks/matrix'
 import { useToast } from '@fedi/common/hooks/toast'
+import { useAsyncCallback } from '@fedi/common/hooks/util'
 import {
     selectIsDefaultGroup,
     selectMatrixRoom,
@@ -90,6 +91,7 @@ const MessageInput: React.FC<MessageInputProps> = ({
     const isDefaultGroup = useAppSelector(s => selectIsDefaultGroup(s, id))
     const isGuardianitoRoom =
         existingRoom?.name === GUARDIANITO_BOT_DISPLAY_NAME
+    const isDirectChat = existingRoom?.isDirect
     const repliedEvent = useAppSelector(s =>
         selectReplyingToMessageEventForRoom(s, id),
     )
@@ -103,11 +105,11 @@ const MessageInput: React.FC<MessageInputProps> = ({
         editingMessage,
         isEditingMessage,
         resetMessageText,
+        shouldShowMediaButtons,
     } = useMessageInputState(id)
 
     const { isVisible: kbVisible, height: kbHeight } = useKeyboard()
     const [isFocused, setIsFocused] = useState(false)
-    const [isSendingMessage, setIsSendingMessage] = useState(false)
     const [selection, setSelection] = useState<{ start: number; end: number }>({
         start: 0,
         end: 0,
@@ -117,8 +119,8 @@ const MessageInput: React.FC<MessageInputProps> = ({
         [existingRoom],
     )
     const mentionEnabled = useMemo(
-        () => !(!!directUserId || (!existingRoom && !isPublic)),
-        [directUserId, existingRoom, isPublic],
+        () => !(!!isDirectChat || (!existingRoom && !isPublic)),
+        [isDirectChat, existingRoom, isPublic],
     )
 
     // Build candidates for the mention hook, injecting "self" if missing so we can self-mention by display name.
@@ -211,15 +213,9 @@ const MessageInput: React.FC<MessageInputProps> = ({
         // Matches three or more whitespace characters, including newlines, tabs, etc
         .replace(/\s{3,}/g, match => match.slice(0, 2))
 
-    const handleSend = useCallback(async () => {
-        if (
-            (!trimmedMessageText && !attachments.hasAttachments) ||
-            isSending ||
-            isSendingMessage
-        )
+    const [handleSend, isSendingMessage] = useAsyncCallback(async () => {
+        if ((!trimmedMessageText && !attachments.hasAttachments) || isSending)
             return
-
-        setIsSendingMessage(true)
 
         try {
             await onMessageSubmitted(
@@ -237,8 +233,6 @@ const MessageInput: React.FC<MessageInputProps> = ({
             }
         } catch (e) {
             toast.error(t, e, 'errors.chat-unavailable')
-        } finally {
-            setIsSendingMessage(false)
         }
     }, [
         attachments,
@@ -249,7 +243,6 @@ const MessageInput: React.FC<MessageInputProps> = ({
         dispatch,
         toast,
         t,
-        isSendingMessage,
         resetMessageText,
     ])
 
@@ -367,6 +360,7 @@ const MessageInput: React.FC<MessageInputProps> = ({
                         { minHeight: inputHeight },
                     ]}>
                     <Input
+                        testID="MessageInput-TextInput"
                         disableFullscreenUI
                         textBreakStrategy="simple"
                         onChangeText={value => setMessageText(value)}
@@ -406,6 +400,7 @@ const MessageInput: React.FC<MessageInputProps> = ({
 
                 {!isReadOnly && !existingRoom && (
                     <Pressable
+                        testID="MessageInput-SendButton"
                         style={style.sendButton}
                         onPress={handleSend}
                         hitSlop={10}
@@ -437,7 +432,7 @@ const MessageInput: React.FC<MessageInputProps> = ({
                          * - Polls are not available in broadcast rooms
                          * */}
                         {!isReadOnly &&
-                            !directUserId &&
+                            !isDirectChat &&
                             !isDefaultGroup &&
                             !existingRoom.broadcastOnly && (
                                 <Pressable
@@ -450,8 +445,7 @@ const MessageInput: React.FC<MessageInputProps> = ({
                                     <SvgImage name="Poll" />
                                 </Pressable>
                             )}
-                        {/* To prevent users from uploading unencrypted media, media uploads are not available in public chats */}
-                        {!isPublic && !isReadOnly && (
+                        {shouldShowMediaButtons && (
                             <>
                                 {attachments.isUploadingMedia ? (
                                     <ActivityIndicator size={theme.sizes.sm} />
@@ -506,6 +500,7 @@ const MessageInput: React.FC<MessageInputProps> = ({
                                 </View>
                             ) : (
                                 <Pressable
+                                    testID="MessageInput-SendButton"
                                     style={style.sendButton}
                                     onPress={handleSend}
                                     hitSlop={15}

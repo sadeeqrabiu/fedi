@@ -1080,12 +1080,7 @@ export const setSuggestedPaymentFederation = createAsyncThunk<
 )
 
 export const listGateways = createAsyncThunk<
-    {
-        nodePubKey: string
-        gatewayId: string
-        api: string
-        active: boolean
-    }[],
+    RpcLightningGateway[],
     { fedimint: FedimintBridge; federationId: string },
     { state: CommonState }
 >(
@@ -1476,6 +1471,11 @@ export const selectLastSelectedCommunityChats = createSelector(
 export const selectDefaultChats = (s: CommonState, federationId: string) => {
     return s.federation.defaultCommunityChats[federationId] || []
 }
+
+export const selectDefaultMatrixRoom = (s: CommonState, roomId: string) =>
+    Object.values(s.federation.defaultCommunityChats)
+        .flat()
+        .find(room => room.id === roomId)
 
 export const selectMaxStableBalanceSats = createSelector(
     selectFederationMetadata,

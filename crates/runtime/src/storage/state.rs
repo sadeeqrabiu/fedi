@@ -99,6 +99,12 @@ pub struct AppStateJsonOnboarded {
     #[serde(default)]
     pub internal_bridge_export: bool,
 
+    /// Flag indicating a device index conflict was detected (another device
+    /// took over this device's index). Persisted so the next launch goes
+    /// straight to offboarding.
+    #[serde(default)]
+    pub device_index_conflict: bool,
+
     /// Tracks how the user completed onboarding. None for users who onboarded
     /// before this field was added.
     #[serde(default)]
@@ -288,6 +294,13 @@ pub struct FederationInfo {
     /// Kind of bitcoin network backing the federation--mainnet, signet, etc.
     #[serde(default)]
     pub network: Option<bitcoin::Network>,
+
+    /// A record of the time when the user first joined the federation. This is
+    /// presently used to ignore old LNURL receives whose corresponding
+    /// invoices expired in the past before the user (re)joined the
+    /// federation. But it may have other uses in the future as well.
+    #[serde(default)]
+    pub join_timestamp_secs_since_epoch: Option<u64>,
 }
 
 /// { database_name: String } | { database_prefix: u64 }
@@ -333,7 +346,14 @@ pub struct CommunityInfo {
     /// fetched from server. We keep this in AppState so we can
     /// reload from disk on app restart, and also to be able to diff
     /// and notify the front-end in case of any updates.
-    pub meta: CommunityJson,
+    #[serde(rename = "meta")]
+    pub json: CommunityJson,
+
+    /// When the creator of the community has deleted it, the status is set to
+    /// Deleted. Deleted communities are treated as "archived". They are never
+    /// updated again, and exist locally until the user leaves it.
+    #[serde(default)]
+    pub status: CommunityStatus,
 }
 
 /// When fetching the Community's JSON file and deserializing it, we expect
@@ -346,6 +366,16 @@ pub struct CommunityJson {
     pub version: u32,
     #[serde(flatten)]
     pub meta: BTreeMap<String, String>,
+}
+
+// If a v2 community has been marked as deleted by the creator, we assign the
+// "Deleted" status to it. Otherwise, the status is always "Active" (including
+// for v1 communities).
+#[derive(Clone, Default, Serialize, Deserialize, PartialEq)]
+pub enum CommunityStatus {
+    #[default]
+    Active,
+    Deleted,
 }
 
 // In order to display time-of-transaction fiat rate and currency, we need to
@@ -405,6 +435,7 @@ impl AppStateJson {
                     device_index,
                     social_recovery_state,
                     internal_bridge_export: false,
+                    device_index_conflict: false,
                     onboarding_method: None,
                     first_comm_invite_code: FirstCommunityInviteCodeState::NeverSet,
                     guardian_password_map: BTreeMap::new(),

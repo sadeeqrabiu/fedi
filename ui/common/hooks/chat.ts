@@ -1,14 +1,17 @@
 import { TFunction } from 'i18next'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
-import type { Sats } from '@fedi/common/types'
+import type { MatrixPaymentEvent, Sats } from '@fedi/common/types'
 
 import { INVALID_NAME_PLACEHOLDER } from '../constants/matrix'
 import {
     CommonDispatch,
     configureMatrixPushNotifications,
+    parseEcash,
     selectChatDrafts,
     selectMatrixAuth,
+    selectMatrixRoomCanUploadMedia,
+    selectMatrixRoomIsReadOnly,
     selectMessageToEdit,
     selectPaymentFederation,
     sendMatrixPaymentPush,
@@ -21,7 +24,9 @@ import {
 import { getDisplayNameValidator, parseData } from '../utils/chat'
 import { makeLog } from '../utils/log'
 import { useMinMaxRequestAmount, useMinMaxSendAmount } from './amount'
+import { useFederationPreview } from './federation'
 import { useFedimint } from './fedimint'
+import { useMatrixPaymentEvent } from './matrix'
 import { useCommonDispatch, useCommonSelector } from './redux'
 import { useToast } from './toast'
 import { useDebouncedEffect } from './util'
@@ -372,12 +377,23 @@ export const useDisplayNameForm = (t: TFunction) => {
  * - Debounced draft persistence
  * - Edit mode detection and text initialization
  * - Re-sync from draft when roomId changes
+ * - Check if user has power level required to upload media
  */
 export function useMessageInputState(roomId: string) {
     const dispatch = useCommonDispatch()
     const drafts = useCommonSelector(selectChatDrafts)
     const editingMessage = useCommonSelector(selectMessageToEdit)
     const [messageText, setMessageText] = useState<string>(drafts[roomId] ?? '')
+
+    // dont show the media buttons if the room is read-only
+    const isReadOnly = useCommonSelector(s =>
+        selectMatrixRoomIsReadOnly(s, roomId),
+    )
+    // check if this user can upload media in this room
+    const canUploadMedia = useCommonSelector(s =>
+        selectMatrixRoomCanUploadMedia(s, roomId),
+    )
+    const shouldShowMediaButtons = canUploadMedia && !isReadOnly
 
     // Re-initialize from draft when room changes (but not when editing)
     useEffect(() => {
@@ -421,5 +437,78 @@ export function useMessageInputState(roomId: string) {
         editingMessage,
         isEditingMessage: !!editingMessage,
         resetMessageText,
+        shouldShowMediaButtons,
+    }
+}
+
+/**
+ * Hook for handling joining a federation before receiving a foreign ecash payment
+ * Automatically handles parsing the ecash payment and previewing the federation
+ */
+export function useAcceptForeignEcash(
+    t: TFunction,
+    paymentEvent: MatrixPaymentEvent,
+) {
+    const [inviteCode, setInviteCode] = useState<string | null>(null)
+    const [showFederationPreview, setShowFederationPreview] =
+        useState<boolean>(false)
+    const [hideOtherMethods, setHideOtherMethods] = useState<boolean>(true)
+    const toast = useToast()
+    const dispatch = useCommonDispatch()
+    const fedimint = useFedimint()
+    const {
+        federationInviteCode,
+        // paymentSender
+    } = useMatrixPaymentEvent({
+        event: paymentEvent,
+        t,
+        onError: _ => toast.error(t, 'errors.chat-payment-failed'),
+    })
+    const {
+        isJoining,
+        isFetchingPreview,
+        federationPreview,
+        handleCode,
+        handleJoin,
+    } = useFederationPreview(t, federationInviteCode || '')
+
+    useEffect(() => {
+        if (!paymentEvent.content.ecash) return
+
+        dispatch(
+            parseEcash({
+                fedimint,
+                ecash: paymentEvent.content.ecash,
+            }),
+        )
+            .unwrap()
+            .then(parsed => {
+                if (parsed.federation_type === 'joined') {
+                    log.error('federation should not be joined')
+                    return
+                }
+
+                setInviteCode(
+                    parsed.federation_invite || federationInviteCode || '',
+                )
+            })
+    }, [paymentEvent.content.ecash, federationInviteCode, dispatch, fedimint])
+
+    useEffect(() => {
+        if (!inviteCode) return
+        // skip handling the code if we already have a preview
+        if (federationPreview) return
+        handleCode(inviteCode)
+    }, [federationPreview, inviteCode, handleCode])
+
+    return {
+        isJoining,
+        isFetchingPreview,
+        federationPreview,
+        handleJoin,
+        showFederationPreview,
+        setShowFederationPreview,
+        hideOtherMethods,
+        setHideOtherMethods,
     }
 }

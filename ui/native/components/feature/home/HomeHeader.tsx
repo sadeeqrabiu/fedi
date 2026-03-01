@@ -88,10 +88,6 @@ const styles = (theme: Theme) =>
             gap: theme.spacing.xs,
             paddingBottom: theme.spacing.md,
         },
-        contentContainer: {
-            paddingHorizontal: theme.spacing.lg,
-            paddingBottom: theme.spacing.lg,
-        },
         headerContainer: {
             justifyContent: 'center',
             paddingHorizontal: 0,
@@ -99,7 +95,8 @@ const styles = (theme: Theme) =>
         selectedCommunityContainer: {
             borderBottomColor: theme.colors.extraLightGrey,
             borderBottomWidth: 1,
-            padding: theme.spacing.lg,
+            paddingVertical: theme.spacing.xs,
+            paddingHorizontal: theme.spacing.sm,
         },
         nightly: {
             position: 'absolute',

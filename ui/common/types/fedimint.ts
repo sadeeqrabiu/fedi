@@ -25,12 +25,10 @@ import {
     SPv2TransferEvent,
     RpcStabilityPoolConfig,
     MultispendListedEvent,
-    MultispendDepositEventData,
-    WithdrawRequestWithApprovals,
-    GroupInvitationWithKeys,
     RpcStreamUpdate,
     CommunityMigratedToV2Event,
 } from './bindings'
+import { MultispendDepositEvent, MultispendWithdrawalEvent } from './matrix'
 import { MSats, Usd, UsdCents } from './units'
 
 export type {
@@ -62,22 +60,14 @@ export type MultispendTransactionListEntry = CommonTxnFields & {
     id: string
     counter: MultispendListedEvent['counter']
     time: MultispendListedEvent['time']
-    kind: 'multispend'
 } & (
         | {
-              state: 'deposit'
-              event: { depositNotification: MultispendDepositEventData }
+              state: MultispendDepositEvent
+              kind: 'multispendDeposit'
           }
         | {
-              state: 'withdrawal'
-              event: { withdrawalRequest: WithdrawRequestWithApprovals }
-          }
-        | {
-              state: 'invalid'
-          }
-        | {
-              state: 'groupInvitation'
-              event: { groupInvitation: GroupInvitationWithKeys }
+              state: MultispendWithdrawalEvent
+              kind: 'multispendWithdrawal'
           }
     )
 
@@ -87,15 +77,9 @@ export type MultispendTransactionListEntry = CommonTxnFields & {
 // TODO: Find a way to include the `createdAt` field in all types on the bridge.
 export type Transaction = RpcTransaction
 
-type NarrowType<
-    T extends MultispendTransactionListEntry | RpcTransactionListEntry,
-> = T extends { kind: 'multispend' }
-    ? MultispendTransactionListEntry
-    : RpcTransactionListEntry
-
-export type TransactionListEntry = NarrowType<
-    MultispendTransactionListEntry | RpcTransactionListEntry
->
+export type TransactionListEntry =
+    | MultispendTransactionListEntry
+    | RpcTransactionListEntry
 
 type TestEquals<T, K> = T extends K ? (K extends T ? true : never) : never
 
@@ -165,6 +149,7 @@ export enum SupportedCurrency {
     AUD = 'AUD',
     BDT = 'BDT',
     BIF = 'BIF',
+    BOB = 'BOB',
     BRL = 'BRL',
     BTN = 'BTN',
     BWP = 'BWP',
@@ -172,11 +157,13 @@ export enum SupportedCurrency {
     CDF = 'CDF',
     CHF = 'CHF',
     CLP = 'CLP',
+    CNY = 'CNY',
     COP = 'COP',
     CRC = 'CRC',
     CUP = 'CUP',
     CZK = 'CZK',
     DJF = 'DJF',
+    DOP = 'DOP',
     ERN = 'ERN',
     ETB = 'ETB',
     EUR = 'EUR',
@@ -187,13 +174,18 @@ export enum SupportedCurrency {
     HNL = 'HNL',
     IDR = 'IDR',
     INR = 'INR',
+    JPY = 'JPY',
     KES = 'KES',
+    KHR = 'KHR',
     KRW = 'KRW',
     LBP = 'LBP',
+    LKR = 'LKR',
+    PAB = 'PAB',
     MMK = 'MMK',
     MWK = 'MWK',
     MXN = 'MXN',
     MYR = 'MYR',
+    MZN = 'MZN',
     NAD = 'NAD',
     NGN = 'NGN',
     NIO = 'NIO',
@@ -202,12 +194,14 @@ export enum SupportedCurrency {
     PHP = 'PHP',
     PKR = 'PKR',
     PLN = 'PLN',
+    PYG = 'PYG',
     RWF = 'RWF',
     SDG = 'SDG',
     SOS = 'SOS',
     SRD = 'SRD',
     SSP = 'SSP',
     THB = 'THB',
+    TZS = 'TZS',
     UAH = 'UAH',
     UGX = 'UGX',
     UYU = 'UYU',
@@ -215,6 +209,7 @@ export enum SupportedCurrency {
     VND = 'VND',
     ZAR = 'ZAR',
     ZMW = 'ZMW',
+    ZWL = 'ZWL',
     XAF = 'XAF',
     XOF = 'XOF',
 }

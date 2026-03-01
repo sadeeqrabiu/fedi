@@ -91,7 +91,7 @@ impl RpcComposerDraft {
 #[serde(rename_all = "camelCase")]
 #[serde(tag = "type")]
 #[ts(export)]
-pub enum MatrixInitializeStatus {
+pub enum RpcMatrixInitializeStatus {
     Starting,
     LoggingIn,
     Success,
@@ -660,6 +660,7 @@ pub struct RpcSerializedRoomInfo {
     pub avatar_url: Option<String>,
     pub preview: Option<RpcTimelineItemEvent>,
     pub direct_user_id: Option<String>,
+    pub is_direct: bool,
     #[ts(as = "u32")]
     pub notification_count: u64,
     pub is_marked_unread: bool,
@@ -668,21 +669,24 @@ pub struct RpcSerializedRoomInfo {
     pub is_preview: bool,
     pub is_public: Option<bool>,
     pub room_state: RpcMatrixRoomState,
+    /// Opaque timestamp for room sorting. Higher values = more recent activity.
+    #[ts(type = "number | null")]
+    pub recency_stamp: Option<u64>,
 }
 
 impl RpcSerializedRoomInfo {
     pub async fn from_room_and_info(room: &Room, room_info: &RoomInfo) -> Self {
         let direct_user_id = room.direct_targets().iter().next().map(|id| id.to_string());
+        let is_direct = room.is_direct().await.unwrap_or(false);
 
         Self {
             id: room_info.room_id().to_string(),
             name: match room.cached_display_name() {
                 Some(RoomDisplayName::Calculated(name)) => name.clone(),
                 Some(RoomDisplayName::Named(name)) => name.clone(),
-                Some(RoomDisplayName::Empty) => String::new(),
-                Some(RoomDisplayName::EmptyWas(name)) => name.clone(),
                 Some(RoomDisplayName::Aliased(name)) => name.clone(),
-                // TODO: fixme
+                Some(RoomDisplayName::Empty) => String::new(),
+                Some(RoomDisplayName::EmptyWas(_)) => String::new(),
                 None => String::new(),
             },
             avatar_url: if direct_user_id.is_some() {
@@ -699,6 +703,7 @@ impl RpcSerializedRoomInfo {
                 .await
                 .map(|e| RpcTimelineItemEvent::from(&e)),
             direct_user_id,
+            is_direct,
             notification_count: room.read_receipts().num_unread,
             is_marked_unread: room.is_marked_unread(),
             joined_member_count: room_info.joined_members_count(),
@@ -711,6 +716,7 @@ impl RpcSerializedRoomInfo {
                 RoomState::Knocked => RpcMatrixRoomState::Knocked,
                 RoomState::Banned => RpcMatrixRoomState::Banned,
             },
+            recency_stamp: room.recency_stamp().map(|s| s.into()),
         }
     }
 }

@@ -32,7 +32,7 @@ import {
     MentionExtractionResult,
     MentionParsingResult,
     MultispendDepositEvent,
-    MultispendListedInvitationEvent,
+    MultispendGroupInvitationEvent,
     MultispendRole,
     MultispendTransactionListEntry,
     MultispendWithdrawalEvent,
@@ -52,7 +52,7 @@ import {
     RpcMentions,
     JSONObject,
     RpcTimelineItemEvent,
-    type RpcUserPowerLevel,
+    RpcUserPowerLevel,
 } from '../types/bindings'
 import { makeLog } from './log'
 import { constructUrl } from './neverthrow'
@@ -167,6 +167,13 @@ export const filterMultispendEvents = (events: MatrixEvent[]) => {
     )
 }
 
+// only filters spTransfer events that shouldn't be rendered
+export const filterVirtualSpTransferEvents = (events: MatrixEvent[]) => {
+    return events.filter(
+        event => !(isSpTransferEvent(event) && !event.content.shouldRender),
+    )
+}
+
 export const matrixUrlMetadataSchema = z.object({
     'matrix:image:size': z.number().nullish(),
     'og:description': z.string().nullish(),
@@ -271,7 +278,7 @@ export function makeChatFromUnjoinedRoomPreview(preview: MatrixGroupPreview) {
     const chat: MatrixRoom = {
         ...info,
         preview: chatPreview,
-        // all previews are default rooms which should be broadcast only
+        // all previews are default rooms which can be either public chat rooms or public broadcast rooms
         // TODO: allow non-default, non-broadcast only previewing of rooms
         broadcastOnly: true,
     }
@@ -397,6 +404,11 @@ export function isBolt11PaymentEvent(
         (isPaymentEvent(event) && !!event.content.bolt11) ||
         (isTextEvent(event) && isBolt11(event.content.body))
     )
+}
+export function isSpTransferEvent(
+    event: MatrixEvent,
+): event is MatrixEvent<'spTransfer'> {
+    return event.content.msgtype === 'spTransfer'
 }
 
 export function getReceivablePaymentEvents(
@@ -642,7 +654,7 @@ export function isMultispendWithdrawalResponseEvent(
     )
 }
 
-export function isMultispendWithdrawalRequestEvent(
+export function isMatrixMultispendWithdrawalEvent(
     event: MatrixEvent,
 ): event is MatrixMultispendEvent<'withdrawalRequest'> {
     return (
@@ -651,7 +663,7 @@ export function isMultispendWithdrawalRequestEvent(
     )
 }
 
-export function isMultispendDepositEvent(
+export function isMatrixMultispendDepositEvent(
     event: MatrixEvent,
 ): event is MatrixMultispendEvent<'depositNotification'> {
     return (
@@ -794,12 +806,13 @@ export const makeMultispendWalletHeader = (
 }
 
 export const coerceMultispendTxn = (
-    txn: MultispendListedEvent,
+    event: MultispendWithdrawalEvent | MultispendDepositEvent,
 ): MultispendTransactionListEntry => {
     const coerced = {
-        ...txn,
-        createdAt: txn.time,
-        id: txn.eventId,
+        createdAt: event.time,
+        id: event.eventId,
+        counter: event.counter,
+        time: event.time,
         amount: 0 as MSats,
         fediFeeStatus: null,
         txnNotes: '',
@@ -810,36 +823,19 @@ export const coerceMultispendTxn = (
             senderMatrixId: null,
         },
         outcomeTime: null,
-        kind: 'multispend' as const,
     }
-    if (txn.event === 'invalidEvent') {
+    if (isMultispendDepositEvent(event)) {
         return {
             ...coerced,
-            state: 'invalid' as const,
+            state: event,
+            kind: 'multispendDeposit' as const,
         }
-    } else if ('depositNotification' in txn.event) {
-        return {
-            ...coerced,
-            state: 'deposit' as const,
-            event: { depositNotification: txn.event.depositNotification },
-        }
-    } else if ('withdrawalRequest' in txn.event) {
-        return {
-            ...coerced,
-            state: 'withdrawal' as const,
-            event: { withdrawalRequest: txn.event.withdrawalRequest },
-        }
-    } else if ('groupInvitation' in txn.event) {
-        return {
-            ...coerced,
-            state: 'groupInvitation' as const,
-            event: { groupInvitation: txn.event.groupInvitation },
-        }
-    } else {
-        return {
-            ...coerced,
-            state: 'invalid' as const,
-        }
+    }
+
+    return {
+        ...coerced,
+        state: event,
+        kind: 'multispendWithdrawal' as const,
     }
 }
 
@@ -855,14 +851,17 @@ export const findUserDisplayName = (
     return user ? makeNameWithSuffix(user) : userId
 }
 
-export function isMultispendFinancialTransaction(
-    event: MultispendTransactionListEntry,
-): event is MultispendWithdrawalEvent | MultispendDepositEvent {
-    return event.state === 'withdrawal' || event.state === 'deposit'
+export function isMultispendFinancialEvent(
+    evt: MultispendListedEvent,
+): evt is MultispendWithdrawalEvent | MultispendDepositEvent {
+    return (
+        typeof evt.event !== 'string' &&
+        ('withdrawalRequest' in evt.event || 'depositNotification' in evt.event)
+    )
 }
 
 export function isMultispendWithdrawalEvent(
-    event: MultispendTransactionListEntry,
+    event: MultispendListedEvent,
 ): event is MultispendWithdrawalEvent {
     return (
         'event' in event &&
@@ -871,11 +870,21 @@ export function isMultispendWithdrawalEvent(
     )
 }
 
+export function isMultispendDepositEvent(
+    event: MultispendListedEvent,
+): event is MultispendDepositEvent {
+    return (
+        'event' in event &&
+        typeof event.event === 'object' &&
+        'depositNotification' in event.event
+    )
+}
+
 // References type from the listEvents rpc. NOT matrix events.
 // Use this when handling responses from the `observeMultispendEvent` stream.
 export function isMultispendInvitation(
-    event: MultispendTransactionListEntry,
-): event is MultispendListedInvitationEvent {
+    event: MultispendListedEvent,
+): event is MultispendGroupInvitationEvent {
     return (
         'event' in event &&
         typeof event.event === 'object' &&
@@ -893,8 +902,8 @@ export function getHasUserVotedForWithdrawal(
     return Boolean(rejections.includes(userId) || signatures[userId])
 }
 
-export function isWithdrawalRequestRejected(
-    event: MultispendTransactionListEntry,
+export function isMultispendWithdrawalRejected(
+    event: MultispendWithdrawalEvent,
     multispendStatus: RpcMultispendGroupStatus,
 ) {
     const invitation = getMultispendInvite(multispendStatus)
@@ -911,7 +920,7 @@ export function isWithdrawalRequestRejected(
 }
 
 export function isWithdrawalRequestApproved(
-    event: MultispendTransactionListEntry,
+    event: MultispendWithdrawalEvent,
     multispendStatus: RpcMultispendGroupStatus,
 ) {
     const invitation = getMultispendInvite(multispendStatus)
@@ -1503,11 +1512,6 @@ export const getRoomPreviewText = (room: MatrixRoom, t: TFunction) => {
     if (room.isBlocked) return t('feature.chat.user-is-blocked')
 
     const preview = room.preview
-
-    // HACK: public rooms don't show a preview message so you have to click into it to paginate backwards
-    // TODO: Replace with proper room previews
-    if (room.isPublic && room.broadcastOnly)
-        return t('feature.chat.click-here-for-announcements')
 
     if (!preview) return t('feature.chat.no-messages')
 

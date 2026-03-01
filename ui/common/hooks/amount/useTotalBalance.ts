@@ -1,15 +1,22 @@
 import {
-    changeShowFiatTotalBalance,
     selectLoadedFederations,
     selectOverrideCurrency,
-    selectShowFiatTotalBalance,
+    selectBalanceDisplay,
     selectTotalBalanceMsats,
     selectTotalStableBalanceSats,
+    setBalanceDisplay,
 } from '../../redux'
+import { BalanceDisplayType as BalanceDisplay } from '../../redux/currency'
 import { MSats, SupportedCurrency } from '../../types'
 import amountUtils from '../../utils/AmountUtils'
 import { useCommonDispatch, useCommonSelector } from '../redux'
 import { useAmountFormatter } from './useAmountFormatter'
+
+const DISPLAY_CAROUSEL_MAP: Record<BalanceDisplay, BalanceDisplay> = {
+    sats: 'fiat',
+    fiat: 'hidden',
+    hidden: 'sats',
+}
 
 /**
  * Provides state for rendering the total balance across all federations.
@@ -27,32 +34,30 @@ export function useTotalBalance() {
         totalStableBalanceSats,
     )
     const overrideCurrency = useCommonSelector(selectOverrideCurrency)
-    const showFiatTotalBalance = useCommonSelector(selectShowFiatTotalBalance)
+    const balanceDisplay = useCommonSelector(selectBalanceDisplay)
     const currencyToUse = overrideCurrency ?? SupportedCurrency.USD
     const { makeFormattedAmountsFromMSats } = useAmountFormatter({
         currency: currencyToUse,
     })
     const combinedMsats = (totalBalanceMsats + totalStableBalanceMsats) as MSats
-    const { formattedBtc, formattedSats, formattedFiat } =
-        makeFormattedAmountsFromMSats(combinedMsats)
+    const { formattedBitcoinAmount, formattedSats, formattedFiat } =
+        makeFormattedAmountsFromMSats(combinedMsats, 'end', true)
 
+    // sats -> fiat -> hidden -> sats...
     const changeDisplayCurrency = () => {
-        // if the user has an override currency, tapping total balance does nothing
-        if (overrideCurrency) return
-        // otherwise toggle between fiat and sats
-        dispatch(changeShowFiatTotalBalance(!showFiatTotalBalance))
+        dispatch(setBalanceDisplay(DISPLAY_CAROUSEL_MAP[balanceDisplay]))
     }
 
+    const formattedBalanceMap: Record<BalanceDisplay, string> = {
+        hidden: '*******',
+        fiat: formattedFiat ?? '',
+        sats: formattedBitcoinAmount ?? '',
+    }
+
+    // Allows user to see btc amount + chosen fiat currency + hidden
     return {
         totalBalanceSats: formattedSats,
-        // always show fiat if the user has an override currency
-        formattedBalance: overrideCurrency
-            ? formattedFiat
-            : showFiatTotalBalance
-              ? formattedFiat
-              : totalBalanceMsats > 1_000_000_000 // if over 1M sats, show BTC unit instead
-                ? formattedBtc
-                : formattedSats,
+        formattedBalance: formattedBalanceMap[balanceDisplay],
         shouldHideTotalBalance: loadedFederations.length === 0,
         changeDisplayCurrency,
     }

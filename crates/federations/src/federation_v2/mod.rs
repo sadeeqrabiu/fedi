@@ -1,10 +1,11 @@
 pub mod client;
 pub mod db;
 mod dev;
+mod lnurl_receives_service;
 mod meta;
 
 use std::any::Any;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
 use std::future::Future;
 use std::ops::Not as _;
@@ -15,7 +16,6 @@ use std::time::Duration;
 
 use ::serde::{Deserialize, Serialize};
 use anyhow::{Context, Result, anyhow, bail, ensure};
-use async_recursion::async_recursion;
 use bitcoin::address::NetworkUnchecked;
 use bitcoin::hex::DisplayHex;
 use bitcoin::secp256k1::{self, PublicKey, schnorr};
@@ -32,10 +32,7 @@ use fedi_social_client::{
     FediSocialClientInit, RecoveryFile, RecoveryId, SOCIAL_RECOVERY_SECRET_CHILD_ID, SocialBackup,
     SocialRecoveryClient, SocialRecoveryState, SocialVerification, UserSeedPhrase,
 };
-use fedimint_api_client::api::net::Connector;
-use fedimint_api_client::api::{
-    DynClientConnector, DynGlobalApi, DynModuleApi, FederationApiExt as _, StatusResponse,
-};
+use fedimint_api_client::api::{DynGlobalApi, DynModuleApi, FederationApiExt as _, StatusResponse};
 use fedimint_bip39::Bip39RootSecretStrategy;
 use fedimint_client::backup::ClientBackup;
 use fedimint_client::db::{CachedApiVersionSetKey, ChronologicalOperationLogKey};
@@ -46,13 +43,14 @@ use fedimint_client::module::module::recovery::RecoveryProgress;
 use fedimint_client::module::oplog::{OperationLogEntry, UpdateStreamOrOutcome};
 use fedimint_client::secret::RootSecretStrategy;
 use fedimint_client::{Client, ClientBuilder, ClientHandle};
+use fedimint_connectors::ConnectorRegistry;
 use fedimint_core::config::{ClientConfig, FederationId};
 use fedimint_core::core::{ModuleKind, OperationId};
 use fedimint_core::db::{Committable, DatabaseTransaction, IDatabaseTransactionOpsCoreTyped};
 use fedimint_core::encoding::Encodable;
 use fedimint_core::invite_code::InviteCode;
 use fedimint_core::module::registry::ModuleDecoderRegistry;
-use fedimint_core::module::{ApiRequestErased, ApiVersion};
+use fedimint_core::module::{AmountUnit, ApiRequestErased, ApiVersion};
 use fedimint_core::task::{MaybeSend, MaybeSync, TaskGroup, timeout};
 use fedimint_core::timing::TimeReporter;
 use fedimint_core::util::backoff_util::{aggressive_backoff, background_backoff};
@@ -83,6 +81,7 @@ use fedimint_wallet_client::{
 };
 use futures::{FutureExt, Stream, StreamExt};
 use lightning_invoice::{Bolt11Invoice, RoutingFees};
+use lnurl_receives_service::LnurlReceivesService;
 use meta::{LegacyMetaSourceWithExternalUrl, MetaEntries};
 use rand::Rng;
 use rpc_types::error::ErrorCode;
@@ -93,13 +92,13 @@ use rpc_types::{
     BaseMetadata, EcashReceiveMetadata, EcashSendMetadata, FrontendMetadata, GuardianStatus,
     LightningSendMetadata, OperationFediFeeStatus, RpcAmount, RpcEventId, RpcFederation,
     RpcFederationId, RpcFederationMaybeLoading, RpcFederationPreview, RpcFeeDetails,
-    RpcGenerateEcashResponse, RpcInvoice, RpcJsonClientConfig, RpcLightningGateway,
-    RpcOperationFediFeeStatus, RpcOperationId, RpcPayInvoiceResponse, RpcPeerId,
-    RpcPrevPayInvoiceResult, RpcPublicKey, RpcReturningMemberStatus, RpcSPDepositState,
-    RpcSPV2DepositState, RpcSPV2TransferInState, RpcSPV2TransferOutState, RpcSPV2WithdrawalState,
-    RpcSPWithdrawState, RpcSPv2CachedSyncResponse, RpcTransaction, RpcTransactionDirection,
-    RpcTransactionKind, RpcTransactionListEntry, SPv2DepositMetadata, SPv2TransferMetadata,
-    SPv2WithdrawMetadata, SpMatrixTransferId, SpV2TransferInKind, SpV2TransferOutKind,
+    RpcGenerateEcashResponse, RpcJsonClientConfig, RpcLightningGateway, RpcOperationFediFeeStatus,
+    RpcOperationId, RpcPayInvoiceResponse, RpcPeerId, RpcPrevPayInvoiceResult, RpcPublicKey,
+    RpcReturningMemberStatus, RpcSPDepositState, RpcSPV2DepositState, RpcSPV2TransferInState,
+    RpcSPV2TransferOutState, RpcSPV2WithdrawalState, RpcSPWithdrawState, RpcSPv2CachedSyncResponse,
+    RpcTransaction, RpcTransactionDirection, RpcTransactionKind, RpcTransactionListEntry,
+    SPv2DepositMetadata, SPv2TransferMetadata, SPv2WithdrawMetadata, SpMatrixTransferId,
+    SpV2TransferInKind, SpV2TransferOutKind,
 };
 use runtime::bridge_runtime::Runtime;
 use runtime::constants::{
@@ -260,10 +259,7 @@ pub struct FederationV2 {
     pub spv2_history_service: OnceCell<StabilityPoolHistoryService>,
     pub spv2_sweeper_service: OnceCell<SPv2SweeperService>,
     pub multispend_services: Arc<dyn MultispendNotifications>,
-    // In-memory set of LNURL recurring receives that have currently been actively subscribed to.
-    // Used to ensure that multiple calls to list_transactions doesn't trigger multiple
-    // subscriptions for the same operation.
-    pub lnurl_subbed_op_ids: Mutex<HashSet<OperationId>>,
+    pub lnurl_receives_service: OnceCell<LnurlReceivesService>,
     /// Cache for guardian status to prevent spamming servers
     #[allow(clippy::type_complexity)]
     pub guardian_status_cache:
@@ -277,7 +273,6 @@ pub struct FederationPrefetchedInfo {
     pub(crate) federation_id: FederationId,
     client_config: ClientConfig,
     backup: Option<ClientBackup>,
-    connector: DynClientConnector,
     invite_code: InviteCode,
 }
 
@@ -294,7 +289,6 @@ impl FederationV2 {
         client_builder.with_module(FediSocialClientInit);
         client_builder.with_module(StabilityPoolClientInit);
         client_builder.with_module(stability_pool_client_old::StabilityPoolClientInit);
-        client_builder.with_primary_module_kind(fedimint_mint_client::KIND);
         let client_builder = client_builder
             .with_iroh_enable_dht(false)
             .with_iroh_enable_next(false);
@@ -334,7 +328,7 @@ impl FederationV2 {
             spv2_sync_service: Default::default(),
             spv2_history_service: Default::default(),
             spv2_sweeper_service: Default::default(),
-            lnurl_subbed_op_ids: Default::default(),
+            lnurl_receives_service: Default::default(),
             guardian_status_cache: Mutex::new(None),
         });
         if !recovering {
@@ -453,6 +447,14 @@ impl FederationV2 {
                 error!("stability pool sweeper service already initialized");
             }
         }
+
+        if self
+            .lnurl_receives_service
+            .set(LnurlReceivesService::new(self))
+            .is_err()
+        {
+            error!("lnurl receives service already initialized");
+        }
     }
 
     pub fn client_root_secret_from_root_mnemonic(
@@ -504,6 +506,7 @@ impl FederationV2 {
             let _g = TimeReporter::new("federation loading").level(Level::INFO);
             client_builder
                 .open(
+                    runtime.connectors.clone(),
                     federation_db.clone(),
                     fedimint_client::RootSecret::Custom(
                         Self::client_root_secret_from_root_mnemonic(
@@ -535,16 +538,29 @@ impl FederationV2 {
 
     pub async fn federation_preview(
         info: &FederationPrefetchedInfo,
+        connectors: ConnectorRegistry,
     ) -> Result<RpcFederationPreview> {
+        let api = DynGlobalApi::new(
+            connectors.clone(),
+            // TODO: change join logic to use FederationId v2
+            info.client_config
+                .global
+                .api_endpoints
+                .iter()
+                .map(|(peer_id, peer_url)| (*peer_id, peer_url.url.clone()))
+                .collect(),
+            info.invite_code.api_secret().as_deref(),
+        )?;
+
         let meta_source =
             MetaModuleMetaSourceWithFallback::new(LegacyMetaSourceWithExternalUrl::default());
-        let api = DynGlobalApi::new(info.connector.clone())?;
+
         let meta = meta_source
             .fetch(&info.client_config, &api, FetchKind::Initial, None)
             .await?
             .values
             .into_iter()
-            .map(|(k, v)| (k.0, v.0))
+            .map(|(k, v)| (k.0, v.0.to_string()))
             .collect();
 
         Ok(RpcFederationPreview {
@@ -622,7 +638,11 @@ impl FederationV2 {
         // restore from scratch is not used because it takes too much time.
         // FIXME: api secret
         let client_preview = client_builder
-            .preview_with_existing_config(info.client_config.clone(), None, None)
+            .preview_with_existing_config(
+                runtime.connectors.clone(),
+                info.client_config.clone(),
+                info.invite_code.api_secret(),
+            )
             .await?;
         let client = if recover_from_scratch {
             info!("recovering from scratch");
@@ -686,6 +706,9 @@ impl FederationV2 {
                         database: DatabaseInfo::DatabasePrefix(db_prefix),
                         fedi_fee_schedule,
                         network,
+                        join_timestamp_secs_since_epoch: Some(
+                            fedimint_core::time::duration_since_epoch().as_secs(),
+                        ),
                     },
                 );
                 assert!(old_value.is_none(), "must not override a federation");
@@ -731,7 +754,7 @@ impl FederationV2 {
     }
 
     pub async fn get_cached_meta(&self) -> MetaEntries {
-        let cfg_fetcher = async { self.client.config().await.global.meta };
+        let cfg_fetcher = async { self.client.config().await.global.meta.into_iter().collect() };
 
         // Wait at most 2s for very first meta fetching
         match timeout(
@@ -962,7 +985,7 @@ impl FederationV2 {
         description: String,
         expiry_time: Option<u64>,
         frontend_meta: FrontendMetadata,
-    ) -> Result<RpcInvoice> {
+    ) -> Result<Bolt11Invoice> {
         // some apps have issues paying invoices that are in msats
         // so round up amount to nearest sat
         let amount = Amount::from_sats(amount.0.msats.div_ceil(1000));
@@ -995,17 +1018,7 @@ impl FederationV2 {
         self.subscribe_invoice(operation_id, invoice.clone())
             .await?;
 
-        let invoice: RpcInvoice = invoice.try_into()?;
-        Ok(RpcInvoice {
-            fee: Some(RpcFeeDetails {
-                fedi_fee: RpcAmount(Amount::from_msats(
-                    (invoice.amount.0.msats * fedi_fee_ppm).div_ceil(MILLION),
-                )),
-                network_fee: RpcAmount(Amount::ZERO),
-                federation_fee: RpcAmount(Amount::ZERO),
-            }),
-            ..invoice
-        })
+        Ok(invoice)
     }
 
     fn subscribe_deposit(&self, operation_id: OperationId) {
@@ -1105,46 +1118,13 @@ impl FederationV2 {
         Ok(())
     }
 
-    #[cfg_attr(target_family = "wasm", async_recursion(?Send))]
-    #[cfg_attr(not(target_family = "wasm"), async_recursion)]
-    pub async fn subscribe_recurring_payment_receive(
-        &self,
-        operation_id: OperationId,
-    ) -> Result<()> {
-        self.spawn_cancellable("subscribe invoice", move |fed| async move {
-            let Ok(ln) = fed.client.ln() else {
-                error!("Lightning module not found!");
-                return;
-            };
-            let Ok(updates) = ln.subscribe_ln_recurring_receive(operation_id).await else {
-                error!("Lightning operation with ID {:?} not found!", operation_id);
-                return;
-            };
-            let mut updates = updates.into_stream();
-            while let Some(update) = updates.next().await {
-                info!("Update: {:?}", update);
-                fed.update_operation_state(operation_id, update.clone())
-                    .await;
-                match update {
-                    LnReceiveState::Claimed => {
-                        fed.send_transaction_event(operation_id).await;
-                    }
-                    LnReceiveState::Canceled { .. } => {
-                        fed.send_transaction_event(operation_id).await;
-                    }
-                    _ => {}
-                }
-            }
-        });
-        Ok(())
-    }
-
-    /// Decodes the given lightning invoice (as String) into an RpcInvoice
-    /// whilst attaching federation-specific fee details to the response
-    pub async fn decode_invoice(&self, invoice: String) -> Result<RpcInvoice> {
-        let invoice: Bolt11Invoice = invoice.trim().parse().context(ErrorCode::InvalidInvoice)?;
-        let rpc_invoice: RpcInvoice = invoice.clone().try_into()?;
-        let amount = rpc_invoice.amount.0;
+    /// Estimates fees for paying a lightning invoice in this federation
+    pub async fn estimate_ln_fees(&self, invoice: &Bolt11Invoice) -> Result<RpcFeeDetails> {
+        let amount = Amount::from_msats(
+            invoice
+                .amount_milli_satoshis()
+                .ok_or(anyhow!("Invoice missing amount"))?,
+        );
 
         // Fedi app fee applies regardless of internal/external payment
         let fedi_fee_ppm = self
@@ -1162,7 +1142,7 @@ impl FederationV2 {
         // is within the current federation so that we know to show a 0 gateway fee.
         let mut is_internal_payment = false;
         if let Ok(markers) = self.client.get_internal_payment_markers() {
-            is_internal_payment = invoice_has_internal_payment_markers(&invoice, markers);
+            is_internal_payment = invoice_has_internal_payment_markers(invoice, markers);
             if !is_internal_payment {
                 let gateways = self
                     .client
@@ -1172,7 +1152,7 @@ impl FederationV2 {
                     .into_iter()
                     .map(|g| g.info)
                     .collect::<Vec<_>>();
-                is_internal_payment = invoice_routes_back_to_federation(&invoice, gateways);
+                is_internal_payment = invoice_routes_back_to_federation(invoice, gateways);
             }
         }
 
@@ -1188,13 +1168,11 @@ impl FederationV2 {
             RpcAmount(gateway_fees.to_amount(&amount))
         };
 
-        let fee = Some(RpcFeeDetails {
+        Ok(RpcFeeDetails {
             fedi_fee: RpcAmount(Amount::from_msats(fedi_fee)),
             network_fee,
             federation_fee: RpcAmount(Amount::ZERO),
-        });
-
-        Ok(RpcInvoice { fee, ..rpc_invoice })
+        })
     }
 
     /// Pay lightning invoice
@@ -1499,16 +1477,8 @@ impl FederationV2 {
                     variant: LightningOperationMetaVariant::RecurringPaymentReceive { .. },
                     ..
                 } => {
-                    self.spawn_cancellable(
-                        "subscribe_to_recurring_payment_receive",
-                        move |fed| async move {
-                            if let Err(e) =
-                                fed.subscribe_recurring_payment_receive(operation_id).await
-                            {
-                                warn!("subscribe_to_ln_receive error: {e:?}")
-                            }
-                        },
-                    );
+                    // Recurring receives are handled by the
+                    // lnurl_receive_service
                 }
                 #[allow(deprecated)]
                 LightningOperationMeta {
@@ -1769,7 +1739,10 @@ impl FederationV2 {
             |fed| async move {
                 // always send an initial balance event
                 fed.send_balance_event().await;
-                let mut updates = fed.client.subscribe_balance_changes().await;
+                let mut updates = fed
+                    .client
+                    .subscribe_balance_changes(AmountUnit::BITCOIN)
+                    .await;
                 while (updates.next().await).is_some() {
                     fed.send_balance_event().await;
                 }
@@ -1963,26 +1936,31 @@ impl FederationV2 {
     /// List all lightning gateways registered with the federation
     pub async fn list_gateways(&self) -> anyhow::Result<Vec<RpcLightningGateway>> {
         let gateways = self.client.ln()?.list_gateways().await;
-        let active_gw = self
-            .gateway_service()?
-            .get_active_gateway(&self.client)
-            .await;
         let bridge_gateways: Vec<RpcLightningGateway> = gateways
             .into_iter()
             .map(|gw| RpcLightningGateway {
                 api: gw.info.api.to_string(),
                 node_pub_key: RpcPublicKey(gw.info.node_pub_key),
                 gateway_id: RpcPublicKey(gw.info.gateway_id),
-                active: Some(gw.info.gateway_id) == active_gw,
             })
             .collect();
         Ok(bridge_gateways)
     }
-    /// Switch active lightning gateway
-    pub async fn switch_gateway(&self, gateway_id: &PublicKey) -> Result<()> {
+
+    /// Set gateway override for this federation. Pass None to clear the
+    /// override.
+    pub async fn set_gateway_override(&self, gateway_id: Option<&PublicKey>) -> Result<()> {
         self.gateway_service()?
-            .set_active_gateway(&self.client, gateway_id)
+            .set_gateway_override(&self.client, gateway_id)
             .await
+    }
+
+    /// Get the current gateway override for this federation.
+    pub async fn get_gateway_override(&self) -> Result<Option<PublicKey>> {
+        Ok(self
+            .gateway_service()?
+            .get_gateway_override(&self.client)
+            .await)
     }
 
     /// Receive ecash
@@ -2494,6 +2472,8 @@ impl FederationV2 {
         }
     }
 
+    // Initiates new subscription to operation updates/outcome if no cached outcome
+    // found
     pub async fn get_client_operation_outcome<O, F, Fut>(
         &self,
         operation_id: OperationId,
@@ -2521,6 +2501,27 @@ impl FederationV2 {
             Ok(UpdateStreamOrOutcome::UpdateStream(mut stream)) => Ok(stream.next().await),
             Err(e) => Err(e),
         }
+    }
+
+    // Returns None if no cached outcome found
+    async fn get_client_operation_outcome_cached<O>(
+        &self,
+        operation_id: OperationId,
+        log_entry: OperationLogEntry,
+    ) -> anyhow::Result<Option<O>>
+    where
+        O: Clone + DeserializeOwned + 'static,
+    {
+        // Return client's cached outcome if we find it
+        if let Some(outcome) = log_entry.try_outcome::<O>()? {
+            return Ok(Some(outcome));
+        }
+        // Return our cached outcome if we find it
+        if let Some(outcome) = self.get_operation_state::<O>(&operation_id).await? {
+            return Ok(Some(outcome));
+        }
+
+        Ok(None)
     }
 
     /// Return all transactions via operation log
@@ -2738,38 +2739,33 @@ impl FederationV2 {
                         };
                     }
                     LightningOperationMetaVariant::RecurringPaymentReceive(payment) => {
-                        let state = self
-                            .get_client_operation_outcome(operation_id, entry, |op_id| async move {
-                                self.client
-                                    .ln()?
-                                    .subscribe_ln_recurring_receive(op_id)
-                                    .await
+                        let fed_id = self.federation_id().to_string();
+                        let fed_joined_secs_since_epoch = self
+                            .runtime
+                            .app_state
+                            .with_read_lock(|state| {
+                                state
+                                    .joined_federations
+                                    .get(&fed_id)
+                                    .and_then(|info| info.join_timestamp_secs_since_epoch)
                             })
-                            .await?;
-                        // If the state is "Created" or "WaitingForPayment", we need to subscribe in
-                        // the background so that we can send an update to the front-end when the
-                        // state advances.
-                        let mut lnurl_subbed_op_ids = self.lnurl_subbed_op_ids.lock().await;
-                        if matches!(
-                            state,
-                            Some(
-                                LnReceiveState::Created | LnReceiveState::WaitingForPayment { .. }
-                            )
-                        ) && !lnurl_subbed_op_ids.contains(&operation_id)
+                            .await;
+                        // If the invoice corresponding to this LNURL receive expired before we even
+                        // joined the federation, we are going to filter out
+                        // this TX
+                        if let Some(fed_joined_secs_since_epoch) = fed_joined_secs_since_epoch
+                            && payment
+                                .invoice
+                                .would_expire(Duration::from_secs(fed_joined_secs_since_epoch))
                         {
-                            lnurl_subbed_op_ids.insert(operation_id);
-                            self.spawn_cancellable(
-                                "subscribe_to_recurring_payment_receive",
-                                move |fed| async move {
-                                    if let Err(e) =
-                                        fed.subscribe_recurring_payment_receive(operation_id).await
-                                    {
-                                        warn!("subscribe_to_ln_receive error: {e:?}")
-                                    }
-                                    fed.lnurl_subbed_op_ids.lock().await.remove(&operation_id);
-                                },
-                            );
+                            return Ok(None);
                         }
+                        let state = self
+                            .get_client_operation_outcome_cached::<LnReceiveState>(
+                                operation_id,
+                                entry,
+                            )
+                            .await?;
                         transaction_amount = RpcAmount(Amount {
                             msats: payment.invoice.amount_milli_satoshis().unwrap(),
                         });
@@ -2920,12 +2916,17 @@ impl FederationV2 {
                 StabilityPoolMeta::Withdrawal {
                     txid, extra_meta, ..
                 } => {
+                    let typed_extra_meta =
+                        serde_json::from_value::<SPv2WithdrawMetadata>(extra_meta).ok();
+                    let sweeper_initiated =
+                        matches!(typed_extra_meta, Some(SPv2WithdrawMetadata::Sweeper));
                     frontend_metadata =
-                        match serde_json::from_value::<SPv2WithdrawMetadata>(extra_meta) {
-                            Ok(SPv2WithdrawMetadata::StableBalance { frontend_metadata }) => {
-                                frontend_metadata
-                            }
-                            _ => None,
+                        if let Some(SPv2WithdrawMetadata::StableBalance { frontend_metadata }) =
+                            typed_extra_meta
+                        {
+                            frontend_metadata
+                        } else {
+                            None
                         };
                     let outcome = self
                         .get_client_operation_outcome(operation_id, entry, |op_id| async move {
@@ -2944,6 +2945,7 @@ impl FederationV2 {
                                 state: RpcSPV2WithdrawalState::FailedWithdrawal {
                                     error: e.to_string(),
                                 },
+                                sweeper_initiated,
                             }
                         }
                         _ => RpcTransactionKind::SPV2Withdrawal {
@@ -2970,6 +2972,7 @@ impl FederationV2 {
                                 transaction_amount = RpcAmount(Amount::ZERO);
                                 RpcSPV2WithdrawalState::DataNotInCache
                             },
+                            sweeper_initiated,
                         },
                     }
                 }
@@ -3250,7 +3253,7 @@ impl FederationV2 {
         let mut dbtx = self.dbtx().await;
         dbtx.insert_entry(&TransactionNotesKey(transaction), &notes)
             .await;
-        dbtx.commit_tx_result().await
+        dbtx.commit_tx_result().await.context("DbError")
     }
 
     // FIXME this is busted in social recovery
@@ -4027,7 +4030,9 @@ impl FederationV2 {
             )
             .await
             .map_err(|e| match e {
-                fedimint_core::db::AutocommitError::CommitFailed { last_error, .. } => last_error,
+                fedimint_core::db::AutocommitError::CommitFailed { last_error, .. } => {
+                    anyhow::anyhow!(last_error)
+                }
                 fedimint_core::db::AutocommitError::ClosureError { error, .. } => error,
             });
 
@@ -4137,7 +4142,9 @@ impl FederationV2 {
             )
             .await
             .map_err(|e| match e {
-                fedimint_core::db::AutocommitError::CommitFailed { last_error, .. } => last_error,
+                fedimint_core::db::AutocommitError::CommitFailed { last_error, .. } => {
+                    anyhow::anyhow!(last_error)
+                }
                 fedimint_core::db::AutocommitError::ClosureError { error, .. } => error,
             });
 
@@ -4235,7 +4242,9 @@ impl FederationV2 {
             )
             .await
             .map_err(|e| match e {
-                fedimint_core::db::AutocommitError::CommitFailed { last_error, .. } => last_error,
+                fedimint_core::db::AutocommitError::CommitFailed { last_error, .. } => {
+                    anyhow::anyhow!(last_error)
+                }
                 fedimint_core::db::AutocommitError::ClosureError { error, .. } => error,
             });
 
@@ -4286,7 +4295,9 @@ impl FederationV2 {
             )
             .await
             .map_err(|e| match e {
-                fedimint_core::db::AutocommitError::CommitFailed { last_error, .. } => last_error,
+                fedimint_core::db::AutocommitError::CommitFailed { last_error, .. } => {
+                    anyhow::anyhow!(last_error)
+                }
                 fedimint_core::db::AutocommitError::ClosureError { error, .. } => error,
             });
 
@@ -4384,7 +4395,9 @@ impl FederationV2 {
             )
             .await
             .map_err(|e| match e {
-                fedimint_core::db::AutocommitError::CommitFailed { last_error, .. } => last_error,
+                fedimint_core::db::AutocommitError::CommitFailed { last_error, .. } => {
+                    anyhow::anyhow!(last_error)
+                }
                 fedimint_core::db::AutocommitError::ClosureError { error, .. } => error,
             });
 
@@ -4455,7 +4468,9 @@ impl FederationV2 {
             )
             .await
             .map_err(|e| match e {
-                fedimint_core::db::AutocommitError::CommitFailed { last_error, .. } => last_error,
+                fedimint_core::db::AutocommitError::CommitFailed { last_error, .. } => {
+                    anyhow::anyhow!(last_error)
+                }
                 fedimint_core::db::AutocommitError::ClosureError { error, .. } => error,
             });
 
@@ -4758,17 +4773,9 @@ fn internal_pay_is_bad_state(outcome: serde_json::Value) -> bool {
     serde_json::from_value::<InternalPayState>(outcome).is_err()
 }
 
-pub async fn download_from_invite_code(
-    invite_code: &InviteCode,
-) -> anyhow::Result<(ClientConfig, DynGlobalApi)> {
-    let connector = Connector::Tcp;
-    connector
-        .download_from_invite_code(invite_code, false, false)
-        .await
-}
-
 impl FederationPrefetchedInfo {
     pub async fn fetch(
+        connectors: ConnectorRegistry,
         invite_code: &str,
         root_mnemonic: &bip39::Mnemonic,
         device_index: u8,
@@ -4779,13 +4786,11 @@ impl FederationPrefetchedInfo {
         if should_override_localhost {
             override_localhost_invite_code(&mut invite_code);
         }
-        let api_single_guardian = DynGlobalApi::from_endpoints(
+        let api_single_guardian = DynGlobalApi::new(
+            connectors.clone(),
             invite_code.peers(),
-            &invite_code.api_secret(),
-            false,
-            false,
-        )
-        .await?;
+            invite_code.api_secret().as_deref(),
+        )?;
         let federation_id = invite_code.federation_id();
         let client_root_sercet = {
             // We do an additional derivation using `DerivableSecret::federation_key` since
@@ -4797,9 +4802,16 @@ impl FederationPrefetchedInfo {
             )
             .federation_key(&federation_id)
         };
+
+        // TODO: we should be using upstream preview functionality instead of
+        // replicating it. let client_preview = Client::builder()
+        //     .await?
+        //     .preview(connectors.clone(), &invite_code)
+        //     .await?;
+
         let decoders = ModuleDecoderRegistry::default().with_fallback();
-        let ((mut client_config, api), backup) = tokio::try_join!(
-            download_from_invite_code(&invite_code),
+        let ((mut client_config, _api), backup) = tokio::try_join!(
+            fedimint_api_client::download_from_invite_code(&connectors, &invite_code),
             Client::download_backup_from_federation_static(
                 &api_single_guardian,
                 &client_root_sercet,
@@ -4814,7 +4826,6 @@ impl FederationPrefetchedInfo {
             client_config,
             backup,
             invite_code,
-            connector: api.connector().clone(),
         })
     }
 }

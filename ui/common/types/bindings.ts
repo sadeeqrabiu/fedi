@@ -33,7 +33,8 @@ export type BalanceEvent = {
 
 export type BridgeOffboardingReason =
   | { type: "deviceIdentifierMismatch" }
-  | { type: "internalBridgeExport" };
+  | { type: "internalBridgeExport" }
+  | { type: "deviceIndexConflict" };
 
 /**
  * Notify front-end that a particular community's metadata has updated
@@ -97,7 +98,9 @@ export type ErrorCode =
   | { federationPendingRejoinFromScratch: string }
   | "invalidMsEvent"
   | "recurringdMetaNotFound"
-  | "unknownFederation";
+  | "unknownFederation"
+  | "offlineExactEcashFailed"
+  | "communityDeleted";
 
 export type Event =
   | { transaction: TransactionEvent }
@@ -198,6 +201,10 @@ export type FeatureCatalog = {
    * Allows users to rearrange the order of mini apps on the Mods screen.
    */
   rearrange_miniapps: RearrangeMiniappsFeatureConfig | null;
+  /**
+   * Config for detecting and processing incoming LNURL receives
+   */
+  lnurl_receives: LnurlReceivesFeatureConfig | null;
 };
 
 export type FediFeeConfig = {
@@ -262,15 +269,17 @@ export type GuardianitoBot = { bot_user_id: string; bot_room_id: string };
 
 export type GuardianitoFeatureConfig = { api_base_url: string };
 
+export type LnurlReceivesFeatureConfig = {
+  /**
+   * How long to wait between re-checking with fedimint client whether there
+   * are any new incoming LNURL invoices
+   */
+  bg_service_polling_delay_secs: number;
+};
+
 export type LogEvent = { log: string };
 
 export type MatrixFeatureConfig = { home_server: string };
-
-export type MatrixInitializeStatus =
-  | { type: "starting" }
-  | { type: "loggingIn" }
-  | { type: "success" }
-  | { type: "error"; error: RpcError };
 
 /**
  * Collected details for a given event id.
@@ -442,6 +451,7 @@ export type RpcCommunity = {
   communityInvite: RpcCommunityInvite;
   name: string;
   meta: { [key in string]?: string };
+  status: RpcCommunityStatus;
 };
 
 export type RpcCommunityInvite =
@@ -453,6 +463,8 @@ export type RpcCommunityInvite =
       community_uuid_hex: string;
       decryption_key: string;
     };
+
+export type RpcCommunityStatus = "active" | "deleted";
 
 export type RpcComposerDraft = {
   plainText: string;
@@ -610,7 +622,6 @@ export type RpcInitOpts = {
 export type RpcInvoice = {
   paymentHash: string;
   amount: RpcAmount;
-  fee: RpcFeeDetails | null;
   description: string;
   invoice: string;
 };
@@ -624,7 +635,6 @@ export type RpcLightningGateway = {
   nodePubKey: RpcPublicKey;
   gatewayId: RpcPublicKey;
   api: string;
-  active: boolean;
 };
 
 export type RpcLnPayState =
@@ -661,6 +671,12 @@ export type RpcMatrixAccountSession = {
   displayName: string | null;
   avatarUrl: string | null;
 };
+
+export type RpcMatrixInitializeStatus =
+  | { type: "starting" }
+  | { type: "loggingIn" }
+  | { type: "success" }
+  | { type: "error"; error: RpcError };
 
 export type RpcMatrixMembership =
   | "ban"
@@ -732,11 +748,13 @@ export type RpcMethods = {
     Array<string>,
   ];
   generateInvoice: [generateInvoice, string];
-  decodeInvoice: [decodeInvoice, RpcInvoice];
+  parseInvoice: [parseInvoice, RpcInvoice];
+  estimateLnFees: [estimateLnFees, RpcFeeDetails];
   payInvoice: [payInvoice, RpcPayInvoiceResponse];
   getPrevPayInvoiceResult: [getPrevPayInvoiceResult, RpcPrevPayInvoiceResult];
   listGateways: [listGateways, Array<RpcLightningGateway>];
-  switchGateway: [switchGateway, null];
+  setGatewayOverride: [setGatewayOverride, null];
+  getGatewayOverride: [getGatewayOverride, RpcPublicKey | null];
   supportsSafeOnchainDeposit: [supportsSafeOnchainDeposit, boolean];
   generateAddress: [generateAddress, string];
   recheckPeginAddress: [recheckPeginAddress, null];
@@ -791,6 +809,7 @@ export type RpcMethods = {
   nostrCreateCommunity: [nostrCreateCommunity, RpcCommunity];
   nostrListOurCommunities: [nostrListOurCommunities, Array<RpcCommunity>];
   nostrEditCommunity: [nostrEditCommunity, null];
+  nostrDeleteCommunity: [nostrDeleteCommunity, null];
   stabilityPoolAccountInfo: [
     stabilityPoolAccountInfo,
     RpcStabilityPoolAccountInfo,
@@ -911,6 +930,10 @@ export type RpcMethods = {
   matrixClearComposerDraft: [matrixClearComposerDraft, null];
   matrixSpTransferSend: [matrixSpTransferSend, RpcEventId];
   matrixSpTransferObserveState: [matrixSpTransferObserveState, null];
+  matrixDenySpTransferFederationInvite: [
+    matrixDenySpTransferFederationInvite,
+    null,
+  ];
   matrixSubscribeMultispendGroup: [matrixSubscribeMultispendGroup, null];
   matrixSubscribeMultispendAccountInfo: [
     matrixSubscribeMultispendAccountInfo,
@@ -1215,12 +1238,17 @@ export type RpcSerializedRoomInfo = {
   avatarUrl: string | null;
   preview: RpcTimelineItemEvent | null;
   directUserId: string | null;
+  isDirect: boolean;
   notificationCount: number;
   isMarkedUnread: boolean;
   joinedMemberCount: number;
   isPreview: boolean;
   isPublic: boolean | null;
   roomState: RpcMatrixRoomState;
+  /**
+   * Opaque timestamp for room sorting. Higher values = more recent activity.
+   */
+  recencyStamp: number | null;
 };
 
 export type RpcSignature = string;
@@ -1237,7 +1265,9 @@ export type RpcSpTransferState = {
 export type RpcSpTransferStatus =
   | { status: "pending" }
   | { status: "complete" }
-  | { status: "failed" };
+  | { status: "failed" }
+  | { status: "federationInviteDenied" }
+  | { status: "expired" };
 
 export type RpcSpv2ParsedPaymentAddress = {
   accountId: RpcAccountId;
@@ -1389,7 +1419,11 @@ export type RpcTransaction = {
   | { kind: "spDeposit"; state: RpcSPDepositState }
   | { kind: "spWithdraw"; state: RpcSPWithdrawState | null }
   | { kind: "sPV2Deposit"; state: RpcSPV2DepositState }
-  | { kind: "sPV2Withdrawal"; state: RpcSPV2WithdrawalState }
+  | {
+      kind: "sPV2Withdrawal";
+      state: RpcSPV2WithdrawalState;
+      sweeper_initiated: boolean;
+    }
   | { kind: "sPV2TransferOut"; state: RpcSPV2TransferOutState }
   | { kind: "sPV2TransferIn"; state: RpcSPV2TransferInState }
 );
@@ -1424,7 +1458,11 @@ export type RpcTransactionKind =
   | { kind: "spDeposit"; state: RpcSPDepositState }
   | { kind: "spWithdraw"; state: RpcSPWithdrawState | null }
   | { kind: "sPV2Deposit"; state: RpcSPV2DepositState }
-  | { kind: "sPV2Withdrawal"; state: RpcSPV2WithdrawalState }
+  | {
+      kind: "sPV2Withdrawal";
+      state: RpcSPV2WithdrawalState;
+      sweeper_initiated: boolean;
+    }
   | { kind: "sPV2TransferOut"; state: RpcSPV2TransferOutState }
   | { kind: "sPV2TransferIn"; state: RpcSPV2TransferInState };
 
@@ -1466,7 +1504,11 @@ export type RpcTransactionListEntry = {
   | { kind: "spDeposit"; state: RpcSPDepositState }
   | { kind: "spWithdraw"; state: RpcSPWithdrawState | null }
   | { kind: "sPV2Deposit"; state: RpcSPV2DepositState }
-  | { kind: "sPV2Withdrawal"; state: RpcSPV2WithdrawalState }
+  | {
+      kind: "sPV2Withdrawal";
+      state: RpcSPV2WithdrawalState;
+      sweeper_initiated: boolean;
+    }
   | { kind: "sPV2TransferOut"; state: RpcSPV2TransferOutState }
   | { kind: "sPV2TransferIn"; state: RpcSPV2TransferInState }
 );
@@ -1559,13 +1601,20 @@ export type SocialRecoveryEvent = {
 
 export type SocialRecoveryQr = { recoveryId: RpcRecoveryId };
 
+export type SpMatrixTransferId = { room_id: RpcRoomId; event_id: RpcEventId };
+
 export type SpTransferUiFeatureConfig = { mode: SpTransferUiMode };
 
 export type SpTransferUiMode = "QrCode" | "Chat";
 
 export type SpTransferVirtualEvent = { shouldRender: boolean };
 
-export type SpTransfersMatrixFeatureConfig = Record<string, never>;
+export type SpTransfersMatrixFeatureConfig = {
+  /**
+   * How long (in seconds) before a pending SP transfer expires.
+   */
+  transfer_expiry_secs: number;
+};
 
 export type SpV2TransferInKind = "multispend" | "unknown";
 
@@ -1750,12 +1799,9 @@ export type completeOnboardingNewSeed = {};
 
 export type completeSocialRecovery = {};
 
-export type decodeInvoice = {
-  federationId: RpcFederationId | null;
-  invoice: string;
-};
-
 export type dumpDb = { federationId: string };
+
+export type estimateLnFees = { federationId: RpcFederationId; invoice: string };
 
 export type evilSpamAddress = { federationId: RpcFederationId };
 
@@ -1798,6 +1844,8 @@ export type getAccruedPendingFediFeesPerTXType = {
 };
 
 export type getFeatureCatalog = {};
+
+export type getGatewayOverride = { federationId: RpcFederationId };
 
 export type getGuardianPassword = {
   federationId: RpcFederationId;
@@ -1874,6 +1922,11 @@ export type matrixDeleteMessage = {
   reason: string | null;
 };
 
+export type matrixDenySpTransferFederationInvite = {
+  roomId: RpcRoomId;
+  eventId: RpcEventId;
+};
+
 export type matrixDownloadFile = { path: string; mediaSource: RpcMediaSource };
 
 export type matrixEditMessage = {
@@ -1891,7 +1944,7 @@ export type matrixGetMediaPreview = { url: string };
 export type matrixIgnoreUser = { userId: RpcUserId };
 
 export type matrixInitializeStatus = {
-  streamId: RpcStreamId<MatrixInitializeStatus>;
+  streamId: RpcStreamId<RpcMatrixInitializeStatus>;
 };
 
 export type matrixListIgnoredUsers = {};
@@ -2052,7 +2105,8 @@ export type matrixSetPusher = { pusher: RpcPusher };
 
 export type matrixSpTransferObserveState = {
   streamId: RpcStreamId<RpcSpTransferState>;
-  pendingPaymentId: RpcEventId;
+  roomId: RpcRoomId;
+  eventId: RpcEventId;
 };
 
 export type matrixSpTransferSend = {
@@ -2113,6 +2167,8 @@ export type nostrDecrypt = { pubkey: string; ciphertext: string };
 
 export type nostrDecrypt04 = { pubkey: string; ciphertext: string };
 
+export type nostrDeleteCommunity = { communityHexUuid: string };
+
 export type nostrEditCommunity = {
   communityHexUuid: string;
   newCommunityJsonStr: string;
@@ -2139,6 +2195,8 @@ export type onboardTransferExistingDeviceRegistration = { index: number };
 export type parseEcash = { ecash: string };
 
 export type parseInviteCode = { inviteCode: string };
+
+export type parseInvoice = { invoice: string };
 
 export type payAddress = {
   federationId: RpcFederationId;
@@ -2175,6 +2233,11 @@ export type recoveryQr = {};
 export type repairWallet = { federationId: RpcFederationId };
 
 export type restoreMnemonic = { mnemonic: Array<string> };
+
+export type setGatewayOverride = {
+  federationId: RpcFederationId;
+  gatewayId: RpcPublicKey | null;
+};
 
 export type setGuardianPassword = {
   federationId: RpcFederationId;
@@ -2308,11 +2371,6 @@ export type streamCancel = { streamId: number };
 export type supportsRecurringdLnurl = { federationId: RpcFederationId };
 
 export type supportsSafeOnchainDeposit = { federationId: RpcFederationId };
-
-export type switchGateway = {
-  federationId: RpcFederationId;
-  gatewayId: RpcPublicKey;
-};
 
 export type updateCachedFiatFXInfo = {
   fiatCode: string;

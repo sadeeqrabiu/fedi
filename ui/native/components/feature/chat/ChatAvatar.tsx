@@ -10,7 +10,7 @@ import {
 } from '@fedi/common/types'
 import { matrixIdToUsername } from '@fedi/common/utils/matrix'
 
-import Avatar, { AvatarProps } from '../../ui/Avatar'
+import Avatar, { AvatarProps, AvatarSize } from '../../ui/Avatar'
 
 type BaseProps = Omit<AvatarProps, 'id' | 'name' | 'icon'>
 type RoomProps = BaseProps & {
@@ -18,6 +18,7 @@ type RoomProps = BaseProps & {
         MatrixRoom,
         | 'id'
         | 'name'
+        | 'isDirect'
         | 'broadcastOnly'
         | 'avatarUrl'
         | 'directUserId'
@@ -40,12 +41,12 @@ export const matrixAuthToAvatarProps = (
 
 export type ChatAvatarProps =
     | RoomProps
-    | (UserProps & { maxFontSizeMultiplier?: number })
+    | (UserProps & { maxFontSizeMultiplier?: number; size?: AvatarSize })
 
 const ChatAvatar: React.FC<ChatAvatarProps> = props => {
     const { theme } = useTheme()
     let id: string | undefined
-    let name: string | undefined
+    let name: string | null
     let icon: AvatarProps['icon'] | undefined
     let src: string | undefined
     let avatarProps: BaseProps
@@ -57,7 +58,7 @@ const ChatAvatar: React.FC<ChatAvatarProps> = props => {
         icon =
             room.name === GUARDIANITO_BOT_DISPLAY_NAME
                 ? 'FediQrLogo'
-                : room.directUserId
+                : room.isDirect
                   ? undefined
                   : room.broadcastOnly
                     ? 'SpeakerPhone'
@@ -81,12 +82,15 @@ const ChatAvatar: React.FC<ChatAvatarProps> = props => {
         avatarProps = rest
     }
 
+    const size = avatarProps.size || AvatarSize.sm
+
     const maxFontSizeMultiplier =
         props.maxFontSizeMultiplier ||
         theme.multipliers.defaultMaxFontMultiplier
 
     return (
         <Avatar
+            size={size}
             id={id || ''}
             name={name || '?'}
             icon={icon}

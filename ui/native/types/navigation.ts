@@ -20,6 +20,7 @@ import {
     Federation,
     Community,
     Spv2ParsedPaymentAddress,
+    MatrixUser,
 } from '@fedi/common/types'
 import { RpcFederationPreview } from '@fedi/common/types/bindings'
 
@@ -55,7 +56,11 @@ export type TabsNavigatorParamList = {
 export type RootStackParamList = {
     AppSettings: undefined
     AddFediMod: { inputMethod: 'enter' | 'scan' }
-    BitcoinRequest: { invoice: string; federationId?: Federation['id'] }
+    LightningRequestQr: {
+        invoice: string
+        federationId?: Federation['id']
+        memo?: string
+    }
     BugReportSuccess: undefined
     CameraPermission: { nextScreen: keyof RootStackParamList } | undefined
     ChatImageViewer: { uri: string; downloadable?: boolean }
@@ -155,7 +160,7 @@ export type RootStackParamList = {
     PublicCommunities: undefined
     LocateSocialRecovery: undefined
     Receive: { federationId: Federation['id'] }
-    ReceiveLightning: { federationId: Federation['id'] }
+    ReceiveBitcoin: { federationId: Federation['id'] }
     ReceiveSuccess: {
         tx: ReceiveSuccessData
         status?: ReceiveSuccessStatus
@@ -196,13 +201,12 @@ export type RootStackParamList = {
     ShareLogs: { ticketNumber: string } | undefined
     OmniScanner: undefined
     FediModBrowser: { url?: string } | undefined
-    ReceiveStabilityQr: { federationId: Federation['id'] }
     Splash: undefined
     StabilityConfirmDeposit: { amount: Sats; federationId: Federation['id'] }
     StabilityConfirmTransfer: {
         amount: UsdCents
         federationId: Federation['id']
-        recipient: Spv2ParsedPaymentAddress
+        recipient: Spv2ParsedPaymentAddress | { matrixUserId: MatrixUser['id'] }
         notes?: string
     }
     StabilityConfirmWithdraw: {

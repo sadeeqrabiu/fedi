@@ -1,4 +1,3 @@
-import FederationsPage from './federations'
+import Send from '../components/Send'
 
-// Send is shown as a modal on the home page
-export default FederationsPage
+export default Send

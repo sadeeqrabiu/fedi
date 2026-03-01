@@ -7,11 +7,12 @@ import {
     makeTestOnchainWithdrawState,
     makeTestOOBReissueState,
     makeTestOOBSpendState,
-    makeTestRpcTxnEntry,
+    makeTestTxnEntry,
     makeTestSPDepositState,
     makeTestSPV2DepositState,
     makeTestSPV2WithdrawalState,
     makeTestSPWithdrawalState,
+    makeTestMultispendWithdrawalEventData,
 } from '../../../utils/transaction'
 
 describe('makeTxnStatusText', () => {
@@ -19,13 +20,13 @@ describe('makeTxnStatusText', () => {
 
     describe('lightning', () => {
         it('lnPay', () => {
-            const lnPayCreated = makeTestRpcTxnEntry('lnPay', {
+            const lnPayCreated = makeTestTxnEntry('lnPay', {
                 state: makeTestLnPayState('created'),
             })
-            const lnPayFunded = makeTestRpcTxnEntry('lnPay', {
+            const lnPayFunded = makeTestTxnEntry('lnPay', {
                 state: makeTestLnPayState('funded'),
             })
-            const lnPayAwaitingChange = makeTestRpcTxnEntry('lnPay', {
+            const lnPayAwaitingChange = makeTestTxnEntry('lnPay', {
                 state: makeTestLnPayState('awaitingChange'),
             })
 
@@ -35,7 +36,7 @@ describe('makeTxnStatusText', () => {
                 t('words.pending'),
             )
 
-            const lnPayWaitingForRefund = makeTestRpcTxnEntry('lnPay', {
+            const lnPayWaitingForRefund = makeTestTxnEntry('lnPay', {
                 state: makeTestLnPayState('waitingForRefund'),
             })
 
@@ -43,17 +44,17 @@ describe('makeTxnStatusText', () => {
                 t('phrases.refund-pending'),
             )
 
-            const lnPayCanceled = makeTestRpcTxnEntry('lnPay', {
+            const lnPayCanceled = makeTestTxnEntry('lnPay', {
                 state: makeTestLnPayState('canceled'),
             })
-            const lnPayFailed = makeTestRpcTxnEntry('lnPay', {
+            const lnPayFailed = makeTestTxnEntry('lnPay', {
                 state: makeTestLnPayState('failed'),
             })
 
             expect(makeTxnStatusText(t, lnPayCanceled)).toBe(t('words.failed'))
             expect(makeTxnStatusText(t, lnPayFailed)).toBe(t('words.failed'))
 
-            const lnPayRefunded = makeTestRpcTxnEntry('lnPay', {
+            const lnPayRefunded = makeTestTxnEntry('lnPay', {
                 state: makeTestLnPayState('refunded'),
             })
 
@@ -61,7 +62,7 @@ describe('makeTxnStatusText', () => {
                 t('words.refunded'),
             )
 
-            const lnPaySuccess = makeTestRpcTxnEntry('lnPay', {
+            const lnPaySuccess = makeTestTxnEntry('lnPay', {
                 state: makeTestLnPayState('success'),
             })
 
@@ -69,19 +70,16 @@ describe('makeTxnStatusText', () => {
         })
 
         it('lnReceive', () => {
-            const lnReceiveCreated = makeTestRpcTxnEntry('lnReceive', {
+            const lnReceiveCreated = makeTestTxnEntry('lnReceive', {
                 state: makeTestLnReceiveState('created'),
             })
-            const lnReceiveWaitingForPayment = makeTestRpcTxnEntry(
-                'lnReceive',
-                {
-                    state: makeTestLnReceiveState('waitingForPayment'),
-                },
-            )
-            const lnReceiveFunded = makeTestRpcTxnEntry('lnReceive', {
+            const lnReceiveWaitingForPayment = makeTestTxnEntry('lnReceive', {
+                state: makeTestLnReceiveState('waitingForPayment'),
+            })
+            const lnReceiveFunded = makeTestTxnEntry('lnReceive', {
                 state: makeTestLnReceiveState('funded'),
             })
-            const lnReceiveAwaitingFunds = makeTestRpcTxnEntry('lnReceive', {
+            const lnReceiveAwaitingFunds = makeTestTxnEntry('lnReceive', {
                 state: makeTestLnReceiveState('awaitingFunds'),
             })
 
@@ -98,7 +96,7 @@ describe('makeTxnStatusText', () => {
                 t('words.pending'),
             )
 
-            const lnReceiveCanceled = makeTestRpcTxnEntry('lnReceive', {
+            const lnReceiveCanceled = makeTestTxnEntry('lnReceive', {
                 state: makeTestLnReceiveState('canceled'),
             })
 
@@ -106,7 +104,7 @@ describe('makeTxnStatusText', () => {
                 t('words.expired'),
             )
 
-            const lnReceiveClaimed = makeTestRpcTxnEntry('lnReceive', {
+            const lnReceiveClaimed = makeTestTxnEntry('lnReceive', {
                 state: makeTestLnReceiveState('claimed'),
             })
 
@@ -118,24 +116,18 @@ describe('makeTxnStatusText', () => {
 
     describe('onchain', () => {
         it('onchainWithdraw', () => {
-            const onchainWithdrawSucceeded = makeTestRpcTxnEntry(
+            const onchainWithdrawSucceeded = makeTestTxnEntry(
                 'onchainWithdraw',
                 {
                     state: makeTestOnchainWithdrawState('succeeded'),
                 },
             )
-            const onchainWithdrawFailed = makeTestRpcTxnEntry(
-                'onchainWithdraw',
-                {
-                    state: makeTestOnchainWithdrawState('failed'),
-                },
-            )
-            const onchainWithdrawCreated = makeTestRpcTxnEntry(
-                'onchainWithdraw',
-                {
-                    state: makeTestOnchainWithdrawState('created'),
-                },
-            )
+            const onchainWithdrawFailed = makeTestTxnEntry('onchainWithdraw', {
+                state: makeTestOnchainWithdrawState('failed'),
+            })
+            const onchainWithdrawCreated = makeTestTxnEntry('onchainWithdraw', {
+                state: makeTestOnchainWithdrawState('created'),
+            })
 
             expect(makeTxnStatusText(t, onchainWithdrawSucceeded)).toBe(
                 t('words.sent'),
@@ -149,13 +141,13 @@ describe('makeTxnStatusText', () => {
         })
 
         it('onchainDeposit', () => {
-            const onchainDepositWaitingForTransaction = makeTestRpcTxnEntry(
+            const onchainDepositWaitingForTransaction = makeTestTxnEntry(
                 'onchainDeposit',
                 {
                     state: makeTestOnchainDepositState('waitingForTransaction'),
                 },
             )
-            const onchainDepositWaitingForConfirmation = makeTestRpcTxnEntry(
+            const onchainDepositWaitingForConfirmation = makeTestTxnEntry(
                 'onchainDeposit',
                 {
                     state: makeTestOnchainDepositState(
@@ -163,13 +155,10 @@ describe('makeTxnStatusText', () => {
                     ),
                 },
             )
-            const onchainDepositClaimed = makeTestRpcTxnEntry(
-                'onchainDeposit',
-                {
-                    state: makeTestOnchainDepositState('claimed'),
-                },
-            )
-            const onchainDepositFailed = makeTestRpcTxnEntry('onchainDeposit', {
+            const onchainDepositClaimed = makeTestTxnEntry('onchainDeposit', {
+                state: makeTestOnchainDepositState('claimed'),
+            })
+            const onchainDepositFailed = makeTestTxnEntry('onchainDeposit', {
                 state: makeTestOnchainDepositState('failed'),
             })
 
@@ -190,13 +179,13 @@ describe('makeTxnStatusText', () => {
 
     describe('ecash', () => {
         it('oobSend', () => {
-            const oobSendCreated = makeTestRpcTxnEntry('oobSend', {
+            const oobSendCreated = makeTestTxnEntry('oobSend', {
                 state: makeTestOOBSpendState('created'),
             })
-            const oobSuccess = makeTestRpcTxnEntry('oobSend', {
+            const oobSuccess = makeTestTxnEntry('oobSend', {
                 state: makeTestOOBSpendState('success'),
             })
-            const oobUserCanceledFailure = makeTestRpcTxnEntry('oobSend', {
+            const oobUserCanceledFailure = makeTestTxnEntry('oobSend', {
                 state: makeTestOOBSpendState('userCanceledFailure'),
             })
 
@@ -206,13 +195,13 @@ describe('makeTxnStatusText', () => {
                 t('words.sent'),
             )
 
-            const oobRefunded = makeTestRpcTxnEntry('oobSend', {
+            const oobRefunded = makeTestTxnEntry('oobSend', {
                 state: makeTestOOBSpendState('refunded'),
             })
-            const oobCanceled = makeTestRpcTxnEntry('oobSend', {
+            const oobCanceled = makeTestTxnEntry('oobSend', {
                 state: makeTestOOBSpendState('userCanceledSuccess'),
             })
-            const oobUserCanceledProcessing = makeTestRpcTxnEntry('oobSend', {
+            const oobUserCanceledProcessing = makeTestTxnEntry('oobSend', {
                 state: makeTestOOBSpendState('userCanceledProcessing'),
             })
 
@@ -224,16 +213,16 @@ describe('makeTxnStatusText', () => {
         })
 
         it('oobReceive', () => {
-            const oobReceiveCreated = makeTestRpcTxnEntry('oobReceive', {
+            const oobReceiveCreated = makeTestTxnEntry('oobReceive', {
                 state: makeTestOOBReissueState('created'),
             })
-            const oobReceiveIssuing = makeTestRpcTxnEntry('oobReceive', {
+            const oobReceiveIssuing = makeTestTxnEntry('oobReceive', {
                 state: makeTestOOBReissueState('issuing'),
             })
-            const oobReceiveDone = makeTestRpcTxnEntry('oobReceive', {
+            const oobReceiveDone = makeTestTxnEntry('oobReceive', {
                 state: makeTestOOBReissueState('done'),
             })
-            const oobReceiveFailed = makeTestRpcTxnEntry('oobReceive', {
+            const oobReceiveFailed = makeTestTxnEntry('oobReceive', {
                 state: makeTestOOBReissueState('failed'),
             })
 
@@ -254,21 +243,18 @@ describe('makeTxnStatusText', () => {
 
     describe('lnurl', () => {
         it('lnRecurringdReceive', () => {
-            const lnurlWaitingForPayment = makeTestRpcTxnEntry(
+            const lnurlWaitingForPayment = makeTestTxnEntry(
                 'lnRecurringdReceive',
                 {
                     state: makeTestLnReceiveState('waitingForPayment'),
                 },
             )
-            const lnurlFunded = makeTestRpcTxnEntry('lnRecurringdReceive', {
+            const lnurlFunded = makeTestTxnEntry('lnRecurringdReceive', {
                 state: makeTestLnReceiveState('funded'),
             })
-            const lnurlAwaitingFunds = makeTestRpcTxnEntry(
-                'lnRecurringdReceive',
-                {
-                    state: makeTestLnReceiveState('awaitingFunds'),
-                },
-            )
+            const lnurlAwaitingFunds = makeTestTxnEntry('lnRecurringdReceive', {
+                state: makeTestLnReceiveState('awaitingFunds'),
+            })
 
             expect(makeTxnStatusText(t, lnurlWaitingForPayment)).toBe(
                 t('words.pending'),
@@ -278,16 +264,16 @@ describe('makeTxnStatusText', () => {
                 t('words.pending'),
             )
 
-            const lnurlCanceled = makeTestRpcTxnEntry('lnRecurringdReceive', {
+            const lnurlCanceled = makeTestTxnEntry('lnRecurringdReceive', {
                 state: makeTestLnReceiveState('canceled'),
             })
 
             expect(makeTxnStatusText(t, lnurlCanceled)).toBe(t('words.expired'))
 
-            const lnurlCreated = makeTestRpcTxnEntry('lnRecurringdReceive', {
+            const lnurlCreated = makeTestTxnEntry('lnRecurringdReceive', {
                 state: makeTestLnReceiveState('created'),
             })
-            const lnurlClaimed = makeTestRpcTxnEntry('lnRecurringdReceive', {
+            const lnurlClaimed = makeTestTxnEntry('lnRecurringdReceive', {
                 state: makeTestLnReceiveState('claimed'),
             })
 
@@ -299,69 +285,60 @@ describe('makeTxnStatusText', () => {
 
     describe('stabilitypool', () => {
         it('spDeposit', () => {
-            const spDepositPending = makeTestRpcTxnEntry('spDeposit', {
+            const spDepositPending = makeTestTxnEntry('spDeposit', {
                 state: makeTestSPDepositState('pendingDeposit'),
+            })
+            const spDepositDataNotInCache = makeTestTxnEntry('spDeposit', {
+                state: makeTestSPDepositState('dataNotInCache'),
+            })
+            const spDepositComplete = makeTestTxnEntry('spDeposit', {
+                state: makeTestSPDepositState('completeDeposit'),
             })
 
             expect(makeTxnStatusText(t, spDepositPending)).toBe(
                 t('words.pending'),
             )
-
-            const spDepositComplete = makeTestRpcTxnEntry('spDeposit', {
-                state: makeTestSPDepositState('completeDeposit'),
-            })
-            const spDepositDataNotInCache = makeTestRpcTxnEntry('spDeposit', {
-                state: makeTestSPDepositState('dataNotInCache'),
-            })
-
-            expect(makeTxnStatusText(t, spDepositComplete)).toBe(
-                t('words.deposit'),
-            )
-            // TODO:TEST: This should NOT be the case
             expect(makeTxnStatusText(t, spDepositDataNotInCache)).toBe(
+                t('words.pending'),
+            )
+            expect(makeTxnStatusText(t, spDepositComplete)).toBe(
                 t('words.deposit'),
             )
         })
 
         it('sPV2Deposit', () => {
-            const spv2DepositPending = makeTestRpcTxnEntry('sPV2Deposit', {
+            const spv2DepositPending = makeTestTxnEntry('sPV2Deposit', {
                 state: makeTestSPV2DepositState('pendingDeposit'),
+            })
+            const spv2DepositDataNotInCache = makeTestTxnEntry('sPV2Deposit', {
+                state: makeTestSPV2DepositState('dataNotInCache'),
+            })
+            const spv2DepositComplete = makeTestTxnEntry('sPV2Deposit', {
+                state: makeTestSPV2DepositState('completedDeposit'),
+            })
+            const spv2DepositFailed = makeTestTxnEntry('sPV2Deposit', {
+                state: makeTestSPV2DepositState('failedDeposit'),
             })
 
             expect(makeTxnStatusText(t, spv2DepositPending)).toBe(
                 t('words.pending'),
             )
-
-            const spv2DepositComplete = makeTestRpcTxnEntry('sPV2Deposit', {
-                state: makeTestSPV2DepositState('completedDeposit'),
-            })
-            const spv2DepositFailed = makeTestRpcTxnEntry('sPV2Deposit', {
-                state: makeTestSPV2DepositState('failedDeposit'),
-            })
-            const spv2DepositDataNotInCache = makeTestRpcTxnEntry(
-                'sPV2Deposit',
-                {
-                    state: makeTestSPV2DepositState('dataNotInCache'),
-                },
+            expect(makeTxnStatusText(t, spv2DepositDataNotInCache)).toBe(
+                t('words.pending'),
             )
-
             expect(makeTxnStatusText(t, spv2DepositComplete)).toBe(
                 t('words.deposit'),
             )
-            // TODO:TEST: This should NOT be the case
             expect(makeTxnStatusText(t, spv2DepositFailed)).toBe(
-                t('words.deposit'),
-            )
-            expect(makeTxnStatusText(t, spv2DepositDataNotInCache)).toBe(
-                t('words.deposit'),
+                t('words.failed'),
             )
         })
 
         it('spWithdraw', () => {
-            const spWithdrawPending = makeTestRpcTxnEntry('spWithdraw', {
+            const spWithdrawPending = makeTestTxnEntry('spWithdraw', {
                 state: makeTestSPWithdrawalState('pendingWithdrawal'),
             })
-            const spWithdrawComplete = makeTestRpcTxnEntry('spWithdraw', {
+            const spWithdrawComplete = makeTestTxnEntry('spWithdraw', {
                 state: makeTestSPWithdrawalState('completeWithdrawal'),
             })
 
@@ -374,22 +351,16 @@ describe('makeTxnStatusText', () => {
         })
 
         it('sPV2Withdrawal', () => {
-            const spv2WithdrawalPending = makeTestRpcTxnEntry(
-                'sPV2Withdrawal',
-                {
-                    state: makeTestSPV2WithdrawalState('pendingWithdrawal'),
-                },
-            )
-            const spv2WithdrawalFailed = makeTestRpcTxnEntry('sPV2Withdrawal', {
+            const spv2WithdrawalPending = makeTestTxnEntry('sPV2Withdrawal', {
+                state: makeTestSPV2WithdrawalState('pendingWithdrawal'),
+            })
+            const spv2WithdrawalFailed = makeTestTxnEntry('sPV2Withdrawal', {
                 state: makeTestSPV2WithdrawalState('failedWithdrawal'),
             })
-            const spv2WithdrawalComplete = makeTestRpcTxnEntry(
-                'sPV2Withdrawal',
-                {
-                    state: makeTestSPV2WithdrawalState('completedWithdrawal'),
-                },
-            )
-            const spv2WithdrawalDataNotInCache = makeTestRpcTxnEntry(
+            const spv2WithdrawalComplete = makeTestTxnEntry('sPV2Withdrawal', {
+                state: makeTestSPV2WithdrawalState('completedWithdrawal'),
+            })
+            const spv2WithdrawalDataNotInCache = makeTestTxnEntry(
                 'sPV2Withdrawal',
                 {
                     state: makeTestSPV2WithdrawalState('dataNotInCache'),
@@ -405,14 +376,13 @@ describe('makeTxnStatusText', () => {
             expect(makeTxnStatusText(t, spv2WithdrawalDataNotInCache)).toBe(
                 t('words.pending'),
             )
-            // TODO:TEST: This should NOT be the case - Need to properly handle failed state
             expect(makeTxnStatusText(t, spv2WithdrawalFailed)).toBe(
-                t('words.withdrawal'),
+                t('words.failed'),
             )
         })
 
         it('sPV2TransferIn', () => {
-            const spv2TransferInPending = makeTestRpcTxnEntry('sPV2TransferIn')
+            const spv2TransferInPending = makeTestTxnEntry('sPV2TransferIn')
 
             expect(makeTxnStatusText(t, spv2TransferInPending)).toBe(
                 t('words.withdrawal'),
@@ -420,11 +390,50 @@ describe('makeTxnStatusText', () => {
         })
 
         it('sPV2TransferOut', () => {
-            const spv2TransferOutPending =
-                makeTestRpcTxnEntry('sPV2TransferOut')
+            const spv2TransferOutPending = makeTestTxnEntry('sPV2TransferOut')
 
             expect(makeTxnStatusText(t, spv2TransferOutPending)).toBe(
                 t('words.sent'),
+            )
+        })
+
+        it('multispendDeposit', () => {
+            const multispendDepositPending =
+                makeTestTxnEntry('multispendDeposit')
+
+            expect(makeTxnStatusText(t, multispendDepositPending)).toBe(
+                t('words.deposit'),
+            )
+        })
+
+        it('multispendWithdrawal', () => {
+            const multispendWithdrawalPending = makeTestTxnEntry(
+                'multispendWithdrawal',
+                {
+                    state: makeTestMultispendWithdrawalEventData('unknown'),
+                },
+            )
+            const multispendWithdrawalAccepted = makeTestTxnEntry(
+                'multispendWithdrawal',
+                {
+                    state: makeTestMultispendWithdrawalEventData('accepted'),
+                },
+            )
+            const multispendWithdrawalRejected = makeTestTxnEntry(
+                'multispendWithdrawal',
+                {
+                    state: makeTestMultispendWithdrawalEventData('rejected'),
+                },
+            )
+
+            expect(makeTxnStatusText(t, multispendWithdrawalPending)).toBe(
+                t('words.pending'),
+            )
+            expect(makeTxnStatusText(t, multispendWithdrawalAccepted)).toBe(
+                t('words.withdrawal'),
+            )
+            expect(makeTxnStatusText(t, multispendWithdrawalRejected)).toBe(
+                t('words.failed'),
             )
         })
     })

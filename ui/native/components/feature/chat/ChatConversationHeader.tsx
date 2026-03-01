@@ -42,8 +42,8 @@ const ChatConversationHeader: React.FC = () => {
         if (room) return room?.name
         else if (preview) return preview?.info.name
         else if (user) return user?.displayName || user?.id
-        return displayName || ''
-    }, [displayName, preview, room, user])
+        return displayName || userId || ''
+    }, [displayName, preview, room, user, userId])
 
     const avatar = useMemo(() => {
         if (room) return <ChatAvatar room={room} size={AvatarSize.sm} />
@@ -163,9 +163,7 @@ const ChatConversationHeader: React.FC = () => {
 
 const styles = (theme: Theme) =>
     StyleSheet.create({
-        container: {
-            paddingTop: theme.spacing.xs,
-        },
+        container: {},
         headerCenterContainer: {
             flex: 6,
         },

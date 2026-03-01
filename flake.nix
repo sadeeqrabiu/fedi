@@ -9,7 +9,7 @@
     nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     fedimint-pkgs = {
-      url = "github:fedibtc/fedimint?ref=v0.9.1-fedi0";
+      url = "github:fedibtc/fedimint?ref=v0.10.0-fedi6";
     };
 
     fenix = {
@@ -27,13 +27,18 @@
     };
 
     cargo-deluxe = {
-      url = "github:rustshop/cargo-deluxe?rev=da124f8fffa731a647420065f204601f9a20b289";
+      url = "github:rustshop/cargo-deluxe?rev=3e9bb6051a6461dd841d5e415de9c3f315c3be81";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
     android-nixpkgs = {
       url = "github:fedibtc/android-nixpkgs?rev=f89ea2d6f9dbc4014c6a0d189ffe94d445bfbd25"; # stable
       # inputs.nixpkgs.follows = "fedimint-pkgs/nixpkgs";
+    };
+
+    andy = {
+      url = "github:maan2003/andy/prebuilt";
+      inputs.nixpkgs.follows = "nixpkgs";
     };
   };
 
@@ -48,6 +53,7 @@
       cargo-deluxe,
       android-nixpkgs,
       flakebox,
+      andy,
       ...
     }:
     flake-utils.lib.eachDefaultSystem (
@@ -341,6 +347,7 @@
               ++ [
                 fedimint-pkgs.packages.${system}.gateway-pkgs
                 fedimint-pkgs.packages.${system}.fedimint-recurringd
+                fedimint-pkgs.packages.${system}.fedimint-recurringdv2
                 pkgs.fs-dir-cache
                 pkgs.cargo-nextest
                 pkgs.cargo-audit
@@ -378,6 +385,7 @@
 
                 pkgs.android-tools
                 androidSdk
+                andy.packages.${system}.default
               ]
               ++ lib.optionals pkgs.stdenv.isDarwin [
                 # add some darwin pkgs if on macos
@@ -391,6 +399,7 @@
             buildInputs = craneMultiBuild.commonArgs.buildInputs ++ [ pkgs.openssl ];
 
             FEDI_CROSS_DEV_SHELL = "1";
+            ANDY_PACKAGE = "com.fedi";
             shellHook = ''
               # Use old ESLINT config format until we upgrade to v9+
               export ESLINT_USE_FLAT_CONFIG=false
@@ -466,6 +475,7 @@
           gatewayd = fedimint-pkgs.packages.${system}.gatewayd;
           gateway-cli = fedimint-pkgs.packages.${system}.gateway-cli;
           fedimint-recurringd = fedimint-pkgs.packages.${system}.fedimint-recurringd;
+          fedimint-recurringdv2 = fedimint-pkgs.packages.${system}.fedimint-recurringdv2;
           fedimint-dbtool = flakeboxLib.pickBinary {
             bin = "fedimint-dbtool";
             pkg = fedimint-pkgs.packages.${system}.fedimint-pkgs;

@@ -22,10 +22,17 @@ use crate::rpc::{self, rpc_error_json};
 
 lazy_static! {
     // Global Tokio runtime
-    pub static ref RUNTIME: tokio::runtime::Runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-        .expect("failed to build runtime");
+    pub static ref RUNTIME: tokio::runtime::Runtime = {
+        let mut builder = tokio::runtime::Builder::new_multi_thread();
+        builder.enable_all();
+
+        // Limit blocking threads on 32-bit platforms to avoid thread count overflow
+        // https://github.com/tokio-rs/tracing/issues/2856
+        #[cfg(target_pointer_width = "32")]
+        builder.max_blocking_threads(64);
+
+        builder.build().expect("failed to build runtime")
+    };
     // Global bridge object used to handle RPC commands
     static ref BRIDGE: Arc<Mutex<Option<Arc<Bridge>>>> = Arc::new(Mutex::new(None));
 }
@@ -118,9 +125,16 @@ pub async fn fedimint_initialize_inner(
     let storage = PathBasedStorage::new(data_dir)
         .await
         .context("Failed to initialize storage")?;
+
+    let connectors = fedimint_connectors::ConnectorRegistry::build_from_client_env()?
+        .bind()
+        .await
+        .context("Failed to bind connectors")?;
+
     let mut bridge_lock = BRIDGE.lock().await;
     let bridge = match fedimint_initialize_async(
         Arc::new(storage),
+        connectors,
         event_sink,
         init_opts.device_identifier,
         init_opts.app_flavor,
@@ -210,7 +224,7 @@ where
         db_name: &str,
     ) -> anyhow::Result<fedimint_core::db::Database> {
         let db_name = self.data_dir.as_ref().join(format!("{db_name}.db"));
-        let db = fedimint_rocksdb::RocksDb::open(db_name).await?;
+        let db = fedimint_rocksdb::RocksDb::build(db_name).open().await?;
         Ok(db.into())
     }
 

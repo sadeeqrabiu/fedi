@@ -107,10 +107,12 @@ jest.mock('@react-native-community/netinfo', () => ({
 jest.mock('react-native-fs', () => ({
     readFile: jest.fn(),
     writeFile: jest.fn(),
+    copyFile: jest.fn(),
     unlink: jest.fn(),
     exists: jest.fn(() => Promise.resolve(true)),
     mkdir: jest.fn(),
     DocumentDirectoryPath: '/mock/documents',
+    TemporaryDirectoryPath: '/tmp',
 }))
 
 jest.mock('react-native-localize', () => ({
@@ -360,6 +362,21 @@ jest.mock('@react-native-documents/picker', () => ({
     DocumentPickerResponse: {},
     pick: jest.fn(),
     keepLocalCopy: jest.fn(),
+    types: {
+        allFiles: '*/*',
+        images: 'image/*',
+        plainText: 'text/plain',
+        audio: 'audio/*',
+        pdf: 'application/pdf',
+        zip: 'application/zip',
+        csv: 'text/csv',
+        doc: 'application/msword',
+        docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        xls: 'application/vnd.ms-excel',
+        xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ppt: 'application/vnd.ms-powerpoint',
+        pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    },
 }))
 
 jest.mock('react-native-gesture-handler', () => ({
@@ -377,14 +394,63 @@ jest.mock('@react-native-clipboard/clipboard', () => ({
     setString: jest.fn(),
 }))
 
-jest.mock('react-native-vision-camera', () => ({
-    Camera: jest.requireActual('react-native').View,
-    useCodeScanner: jest.fn(() => ({
-        scan: jest.fn(),
-    })),
-    useCameraDevice: jest.fn(() => ({
-        id: 'back',
-        name: 'Back Camera',
-        position: 'back',
-    })),
+jest.mock('@react-native-camera-roll/camera-roll', () => ({
+    CameraRoll: {
+        saveAsset: jest.fn().mockResolvedValue(undefined),
+        getPhotos: jest.fn().mockResolvedValue({ edges: [] }),
+    },
 }))
+
+jest.mock('react-native-image-picker', () => ({
+    launchCamera: jest.fn().mockResolvedValue({ assets: [] }),
+    launchImageLibrary: jest.fn().mockResolvedValue({ assets: [] }),
+}))
+
+jest.mock('react-native-share', () => ({
+    open: jest.fn().mockResolvedValue(undefined),
+}))
+
+jest.mock('react-native-vision-camera', () => {
+    const { View } = jest.requireActual('react-native')
+
+    return {
+        __esModule: true,
+        Camera: View,
+        useCodeScanner: jest.fn(() => ({ scan: jest.fn() })),
+        useCameraDevice: jest.fn(() => ({
+            id: 'back',
+            name: 'Back Camera',
+            position: 'back',
+            formats: [
+                {
+                    video: true,
+                    photo: true,
+                    fps: [30],
+                    width: 1920,
+                    height: 1080,
+                },
+                {
+                    video: true,
+                    photo: false,
+                    fps: [60],
+                    width: 1280,
+                    height: 720,
+                },
+            ],
+        })),
+    }
+})
+
+jest.mock('react-native-video', () => {
+    const React = jest.requireActual('react')
+    const { View } = jest.requireActual('react-native')
+
+    const MockVideo = React.forwardRef((props: any, ref: any) =>
+        React.createElement(View, { ...props, ref }),
+    )
+
+    return {
+        __esModule: true,
+        default: MockVideo,
+    }
+})

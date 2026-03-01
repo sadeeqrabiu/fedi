@@ -106,11 +106,18 @@ pub struct FeatureCatalog {
 
     /// Allows users to rearrange the order of mini apps on the Mods screen.
     pub rearrange_miniapps: Option<RearrangeMiniappsFeatureConfig>,
+
+    /// Config for detecting and processing incoming LNURL receives
+    pub lnurl_receives: Option<LnurlReceivesFeatureConfig>,
 }
 
 #[derive(Debug, Clone, TS, Serialize)]
 #[ts(export)]
-pub struct SpTransfersMatrixFeatureConfig {}
+pub struct SpTransfersMatrixFeatureConfig {
+    /// How long (in seconds) before a pending SP transfer expires.
+    #[ts(type = "number")]
+    pub transfer_expiry_secs: u32,
+}
 
 #[derive(Debug, Clone, TS, Serialize)]
 #[ts(export)]
@@ -184,6 +191,15 @@ pub struct CommunityV2MigrationFeatureConfig {}
 #[ts(export)]
 pub struct RearrangeMiniappsFeatureConfig {}
 
+#[derive(Debug, Clone, TS, Serialize)]
+#[ts(export)]
+pub struct LnurlReceivesFeatureConfig {
+    /// How long to wait between re-checking with fedimint client whether there
+    /// are any new incoming LNURL invoices
+    #[ts(type = "number")]
+    pub bg_service_polling_delay_secs: u32,
+}
+
 impl FeatureCatalog {
     pub fn new(runtime_env: RuntimeEnvironment) -> Self {
         match runtime_env {
@@ -220,12 +236,17 @@ impl FeatureCatalog {
             fedi_fee: FediFeeConfig {
                 remittance_max_delay_secs: 300, // 5 minutes for testing
             },
-            sp_transfers_matrix: Some(SpTransfersMatrixFeatureConfig {}),
+            sp_transfers_matrix: Some(SpTransfersMatrixFeatureConfig {
+                transfer_expiry_secs: 2 * 60, // 2 minutes
+            }),
             sp_transfer_ui: Some(SpTransferUiFeatureConfig {
                 mode: SpTransferUiMode::Chat,
             }),
             community_v2_migration: Some(CommunityV2MigrationFeatureConfig {}),
             rearrange_miniapps: Some(RearrangeMiniappsFeatureConfig {}),
+            lnurl_receives: Some(LnurlReceivesFeatureConfig {
+                bg_service_polling_delay_secs: 2,
+            }),
         }
     }
 
@@ -261,12 +282,17 @@ impl FeatureCatalog {
             fedi_fee: FediFeeConfig {
                 remittance_max_delay_secs: 300, // 5 minutes for testing
             },
-            sp_transfers_matrix: Some(SpTransfersMatrixFeatureConfig {}),
+            sp_transfers_matrix: Some(SpTransfersMatrixFeatureConfig {
+                transfer_expiry_secs: 2 * 60, // 2 minutes
+            }),
             sp_transfer_ui: Some(SpTransferUiFeatureConfig {
                 mode: SpTransferUiMode::Chat,
             }),
             community_v2_migration: Some(CommunityV2MigrationFeatureConfig {}),
             rearrange_miniapps: Some(RearrangeMiniappsFeatureConfig {}),
+            lnurl_receives: Some(LnurlReceivesFeatureConfig {
+                bg_service_polling_delay_secs: 2,
+            }),
         }
     }
 
@@ -294,12 +320,17 @@ impl FeatureCatalog {
             fedi_fee: FediFeeConfig {
                 remittance_max_delay_secs: 300, // 5 minutes for testing
             },
-            sp_transfers_matrix: Some(SpTransfersMatrixFeatureConfig {}),
+            sp_transfers_matrix: Some(SpTransfersMatrixFeatureConfig {
+                transfer_expiry_secs: 2 * 60, // 2 minutes
+            }),
             sp_transfer_ui: Some(SpTransferUiFeatureConfig {
                 mode: SpTransferUiMode::Chat,
             }),
             community_v2_migration: Some(CommunityV2MigrationFeatureConfig {}),
             rearrange_miniapps: Some(RearrangeMiniappsFeatureConfig {}),
+            lnurl_receives: Some(LnurlReceivesFeatureConfig {
+                bg_service_polling_delay_secs: 30,
+            }),
         }
     }
 
@@ -336,6 +367,9 @@ impl FeatureCatalog {
             }),
             community_v2_migration: Some(CommunityV2MigrationFeatureConfig {}),
             rearrange_miniapps: Some(RearrangeMiniappsFeatureConfig {}),
+            lnurl_receives: Some(LnurlReceivesFeatureConfig {
+                bg_service_polling_delay_secs: 30,
+            }),
         }
     }
 }

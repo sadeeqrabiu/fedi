@@ -291,7 +291,6 @@ pub enum RpcEcashInfo {
 pub struct RpcInvoice {
     pub payment_hash: String,
     pub amount: RpcAmount,
-    pub fee: Option<RpcFeeDetails>,
     pub description: String,
     pub invoice: String,
 }
@@ -315,7 +314,6 @@ impl TryFrom<lightning_invoice::Bolt11Invoice> for RpcInvoice {
 
         Ok(RpcInvoice {
             amount: RpcAmount(amount),
-            fee: None,
             description,
             invoice: invoice.to_string(),
             payment_hash: invoice.payment_hash().to_string(),
@@ -363,7 +361,6 @@ pub struct RpcLightningGateway {
     pub node_pub_key: RpcPublicKey,
     pub gateway_id: RpcPublicKey,
     pub api: String, // TODO: url::Ur;
-    pub active: bool,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -539,6 +536,7 @@ pub enum RpcTransactionKind {
     },
     SPV2Withdrawal {
         state: RpcSPV2WithdrawalState,
+        sweeper_initiated: bool,
     },
     SPV2TransferOut {
         state: RpcSPV2TransferOutState,

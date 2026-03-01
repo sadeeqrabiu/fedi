@@ -6,6 +6,7 @@ import { Image, StyleSheet } from 'react-native'
 import Share from 'react-native-share'
 
 import { useFedimint } from '@fedi/common/hooks/fedimint'
+import { useToast } from '@fedi/common/hooks/toast'
 import { locateRecoveryFile } from '@fedi/common/redux'
 import { makeLog } from '@fedi/common/utils/log'
 import { prefixFileUri } from '@fedi/common/utils/media'
@@ -28,16 +29,16 @@ export type Props = NativeStackScreenProps<
     'CompleteSocialBackup'
 >
 
-const BACKUPS_REQUIRED = 2
-
 const CompleteSocialBackup: React.FC<Props> = ({ navigation }: Props) => {
     const { t } = useTranslation()
     const { theme } = useTheme()
     const appDispatch = useAppDispatch()
     const fedimint = useFedimint()
-    const [backupsCompleted, setBackupsCompleted] = useState<number>(0)
     const { dispatch } = useBackupRecoveryContext()
     const [isCreatingBackup, setIsCreatingBackup] = useState(false)
+    const [hasBackedUp, setHasBackedUp] = useState(false)
+
+    const toast = useToast()
 
     const createBackup = async () => {
         setIsCreatingBackup(true)
@@ -45,18 +46,23 @@ const CompleteSocialBackup: React.FC<Props> = ({ navigation }: Props) => {
             const recoveryFilePath = await appDispatch(
                 locateRecoveryFile(fedimint),
             ).unwrap()
+
+            log.info('Located recovery file', recoveryFilePath)
+
             await Share.open({
-                title: 'Your Fedi Backup File',
-                // FIXME: this needs file:// prefix ... should do this with a util?
+                title: 'Fedi Backup File',
                 url: prefixFileUri(recoveryFilePath),
+                type: '*/*',
+                failOnCancel: false,
             })
-            setBackupsCompleted(
-                Math.min(BACKUPS_REQUIRED, backupsCompleted + 1),
-            )
+
+            setHasBackedUp(true)
         } catch (error) {
             log.error('createBackup', error)
+            toast.error(t, error)
+        } finally {
+            setIsCreatingBackup(false)
         }
-        setIsCreatingBackup(false)
     }
 
     const style = styles(theme)
@@ -84,12 +90,12 @@ const CompleteSocialBackup: React.FC<Props> = ({ navigation }: Props) => {
                     <Button
                         fullWidth
                         title={
-                            backupsCompleted === 0
+                            !hasBackedUp
                                 ? t('feature.backup.save-file')
-                                : t('words.done')
+                                : t('words.continue')
                         }
                         onPress={() => {
-                            if (backupsCompleted === 0) {
+                            if (!hasBackedUp) {
                                 createBackup()
                             } else {
                                 dispatch(completeSocialBackup())
@@ -98,7 +104,7 @@ const CompleteSocialBackup: React.FC<Props> = ({ navigation }: Props) => {
                         }}
                         loading={isCreatingBackup}
                     />
-                    {backupsCompleted > 0 && (
+                    {hasBackedUp && (
                         <Button
                             fullWidth
                             type="clear"

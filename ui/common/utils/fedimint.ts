@@ -3,6 +3,7 @@ import { ResultAsync } from 'neverthrow'
 import type {
     FedimintBridgeEventMap,
     MSats,
+    MatrixRoom,
     Sats,
     UsdCents,
     bindings,
@@ -190,6 +191,26 @@ export class FedimintBridge {
         })
     }
 
+    async matrixSpTransferSend(
+        amount: UsdCents,
+        roomId: MatrixRoom['id'],
+        federationId: string,
+        federationInvite?: string,
+    ) {
+        return this.rpcTyped('matrixSpTransferSend', {
+            amount,
+            roomId,
+            federationId,
+            federationInvite: federationInvite || null,
+        })
+    }
+
+    matrixSpTransferObserveState(
+        args: StreamRpcArgs<'matrixSpTransferObserveState'>,
+    ): UnsubscribeFn {
+        return this.rpcStream('matrixSpTransferObserveState', args)
+    }
+
     async spv2AccountInfo(federationId: string) {
         return this.rpcTyped('spv2AccountInfo', { federationId })
     }
@@ -358,8 +379,12 @@ export class FedimintBridge {
         })
     }
 
-    async decodeInvoice(invoice: string, federationId: string | null = null) {
-        return this.rpcTyped('decodeInvoice', { invoice, federationId })
+    async parseInvoice(invoice: string) {
+        return this.rpcTyped('parseInvoice', { invoice })
+    }
+
+    async estimateLnFees(invoice: string, federationId: string) {
+        return this.rpcTyped('estimateLnFees', { invoice, federationId })
     }
 
     async payInvoice(invoice: string, federationId: string, notes?: string) {
@@ -590,14 +615,18 @@ export class FedimintBridge {
         return this.rpcTyped('listGateways', { federationId })
     }
 
-    async switchGateway(
-        gatewayId: bindings.RpcPublicKey,
+    async setGatewayOverride(
+        gatewayId: bindings.RpcPublicKey | null,
         federationId: string,
     ) {
-        return this.rpcTyped('switchGateway', {
+        return this.rpcTyped('setGatewayOverride', {
             federationId,
             gatewayId,
         })
+    }
+
+    async getGatewayOverride(federationId: string) {
+        return this.rpcTyped('getGatewayOverride', { federationId })
     }
 
     async getMnemonic() {

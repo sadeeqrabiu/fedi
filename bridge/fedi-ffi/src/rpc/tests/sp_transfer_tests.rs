@@ -15,8 +15,8 @@ pub async fn test_end_to_end(_dev_fed: DevFed) -> anyhow::Result<()> {
     }
 
     // Two devices: sender and receiver
-    let td_sender = TestDevice::new();
-    let td_receiver = TestDevice::new();
+    let td_sender = TestDevice::new().await?;
+    let td_receiver = TestDevice::new().await?;
     let bridge_sender = td_sender.bridge_full().await?;
     let bridge_receiver = td_receiver.bridge_full().await?;
     let matrix_sender = td_sender.matrix().await?;
@@ -119,7 +119,10 @@ pub async fn test_end_to_end(_dev_fed: DevFed) -> anyhow::Result<()> {
         let state = state_stream.next().await.context("stream ended early")?;
         match state.status {
             RpcSpTransferStatus::Pending => continue,
-            RpcSpTransferStatus::Complete | RpcSpTransferStatus::Failed => break state,
+            RpcSpTransferStatus::Complete
+            | RpcSpTransferStatus::Failed
+            | RpcSpTransferStatus::FederationInviteDenied
+            | RpcSpTransferStatus::Expired => break state,
         }
     };
 
@@ -138,8 +141,8 @@ pub async fn test_receiver_joins_federation_later(_dev_fed: DevFed) -> anyhow::R
     }
 
     // Two devices: sender and receiver
-    let td_sender = TestDevice::new();
-    let td_receiver = TestDevice::new();
+    let td_sender = TestDevice::new().await?;
+    let td_receiver = TestDevice::new().await?;
     let bridge_sender = td_sender.bridge_full().await?;
     let bridge_receiver = td_receiver.bridge_full().await?;
     let matrix_sender = td_sender.matrix().await?;
@@ -249,7 +252,10 @@ pub async fn test_receiver_joins_federation_later(_dev_fed: DevFed) -> anyhow::R
         let state = state_stream.next().await.context("stream ended early")?;
         match state.status {
             RpcSpTransferStatus::Pending => continue,
-            RpcSpTransferStatus::Complete | RpcSpTransferStatus::Failed => break state,
+            RpcSpTransferStatus::Complete
+            | RpcSpTransferStatus::Failed
+            | RpcSpTransferStatus::FederationInviteDenied
+            | RpcSpTransferStatus::Expired => break state,
         }
     };
 

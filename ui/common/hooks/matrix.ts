@@ -33,6 +33,8 @@ import {
     unobserveMultispendEvent,
     observeMultispendAccountInfo,
     unobserveMultispendAccountInfo,
+    observeSpTransferState,
+    unobserveSpTransferState,
     checkBolt11PaymentResult,
     sendMatrixFormResponse,
     createMatrixRoom,
@@ -43,11 +45,15 @@ import {
     setChatTimelineSearchQuery,
     selectChatDrafts,
     selectCurrency,
+    selectMatrixRoomPowerLevels,
+    selectMatrixRoomSelfPowerLevel,
+    selectDefaultMatrixRoom,
 } from '../redux'
 import {
     MatrixEvent,
     MatrixFormEvent,
     MatrixPaymentEvent,
+    MatrixPowerLevel,
     MatrixRoom,
     MatrixRoomMember,
     MatrixUser,
@@ -59,6 +65,7 @@ import {
     RpcFederationId,
     RpcFormOption,
     RpcOperationId,
+    RpcTimelineEventItemId,
     RpcTransaction,
 } from '../types/bindings'
 import amountUtils from '../utils/AmountUtils'
@@ -75,6 +82,7 @@ import {
     matrixUrlMetadataSchema,
     getLocalizedTextWithFallback,
     stripReplyFromBody,
+    isPowerLevelGreaterOrEqual,
     isTextEvent,
     shouldShowUnreadIndicator,
     getRoomPreviewText,
@@ -139,6 +147,37 @@ export function useChatTimelineSearchQuery() {
     }
 }
 
+export function filterTimelineSearchResults(
+    textEvents: MatrixEvent[],
+    query: string,
+    memberLookup: Record<string, string>,
+): MatrixEvent[] {
+    if (query.trim() === '') return []
+
+    const queryLower = query.toLowerCase()
+
+    return textEvents.filter(event => {
+        let bodyMatch = false
+        if (isTextEvent(event)) {
+            bodyMatch = (event.content as { body: string }).body
+                .toLowerCase()
+                .includes(queryLower)
+        }
+
+        // matches search query to start of sender display name or
+        // start of any word in the name (e.g. "chr" matches "Chris",
+        // but "hi" does not match "Sophia")
+        const senderName =
+            memberLookup[event.sender] || matrixIdToUsername(event.sender)
+        const senderLower = senderName.toLowerCase()
+        const senderMatch =
+            senderLower.startsWith(queryLower) ||
+            senderLower.split(/\s+/).some(word => word.startsWith(queryLower))
+
+        return bodyMatch || senderMatch
+    })
+}
+
 export function useChatTimelineSearch(roomId: MatrixRoom['id']) {
     const dispatch = useCommonDispatch()
     const { query, setQuery, clearSearch } = useChatTimelineSearchQuery()
@@ -166,27 +205,10 @@ export function useChatTimelineSearch(roomId: MatrixRoom['id']) {
         )
     }, [roomMembers])
 
-    const searchResults = useMemo(() => {
-        if (query.trim() === '') return []
-
-        const queryLower = query.toLowerCase()
-
-        return textEvents.filter(event => {
-            let bodyMatch = false
-            if (isTextEvent(event)) {
-                bodyMatch = (event.content as { body: string }).body
-                    .toLowerCase()
-                    .includes(queryLower)
-            }
-
-            // matches search query to sender display names
-            const senderName =
-                memberLookup[event.sender] || matrixIdToUsername(event.sender)
-            const senderMatch = senderName.toLowerCase().includes(queryLower)
-
-            return bodyMatch || senderMatch
-        })
-    }, [textEvents, query, memberLookup])
+    const searchResults = useMemo(
+        () => filterTimelineSearchResults(textEvents, query, memberLookup),
+        [textEvents, query, memberLookup],
+    )
 
     const isSearching = isPaginating && query.trim() !== ''
 
@@ -342,10 +364,10 @@ export function useObserveMatrixRoom(roomId: MatrixRoom['id']) {
             //
             // TODO: remove when background ecash redemption
             // is moved to the bridge
-            if (room?.directUserId) return
+            if (room?.isDirect) return
             dispatch(unobserveMatrixRoom({ fedimint, roomId }))
         }
-    }, [matrixStarted, roomId, dispatch, room?.directUserId, fedimint])
+    }, [matrixStarted, roomId, dispatch, room?.isDirect, fedimint])
 
     useEffect(() => {
         if (!matrixStarted || !latestEventId) return
@@ -467,7 +489,7 @@ export function useMatrixPaymentEvent({
     )
     const federationInviteCode = event.content.inviteCode
     const isDm = useCommonSelector(
-        s => !!selectMatrixRoom(s, event.roomId)?.directUserId,
+        s => !!selectMatrixRoom(s, event.roomId)?.isDirect,
     )
     const federationId = event.content.federationId
     const selectedCurrency = useCommonSelector(s =>
@@ -900,6 +922,22 @@ export function useObserveMultispendEvent(
     }, [dispatch, roomId, eventId, fedimint])
 }
 
+export function useObserveSpTransferState(
+    roomId: MatrixRoom['id'],
+    eventId: string,
+) {
+    const dispatch = useCommonDispatch()
+    const fedimint = useFedimint()
+
+    useEffect(() => {
+        dispatch(observeSpTransferState({ roomId, eventId, fedimint }))
+
+        return () => {
+            dispatch(unobserveSpTransferState({ roomId, eventId, fedimint }))
+        }
+    }, [dispatch, roomId, eventId, fedimint])
+}
+
 export function useMatrixUrlPreview({ url }: { url: string }) {
     const [urlPreview, setUrlPreview] = useState<MatrixUrlMetadata | null>(null)
     const fedimint = useFedimint()
@@ -1280,9 +1318,16 @@ export function useMatrixRoomPreview({
     roomId: string
     t: TFunction
 }) {
-    const room = useCommonSelector(s => selectMatrixRoom(s, roomId))
-    const roomDraft = useCommonSelector(selectChatDrafts)[room?.id || '']
+    const matrixRoom = useCommonSelector(s => selectMatrixRoom(s, roomId))
+    const defaultRoom = useCommonSelector(s =>
+        selectDefaultMatrixRoom(s, roomId),
+    )
+    const roomDraft = useCommonSelector(selectChatDrafts)[matrixRoom?.id || '']
     const myId = useCommonSelector(selectMatrixAuth)?.userId
+
+    // In this case, we prefer a default room (if any)
+    // because we properly fetch the previews for them even if you haven't joined
+    const room = defaultRoom ?? matrixRoom
 
     const isPublicBroadcast = room?.isPublic && room.broadcastOnly
     const isUnread = shouldShowUnreadIndicator(
@@ -1296,7 +1341,6 @@ export function useMatrixRoomPreview({
     const isNotice =
         room?.preview?.content.msgtype === 'redacted' ||
         !room?.preview ||
-        isPublicBroadcast ||
         isUnread ||
         roomDraft ||
         isBlocked
@@ -1357,4 +1401,75 @@ export function useReplies(
     )
 
     return { senderName, bodySnippet }
+}
+
+/**
+ * Hook that encapsulates message deletion logic including permission checks.
+ * Determines whether the current user can delete a given message based on
+ * power levels, and provides the deletion handler with loading/error state.
+ *
+ * When `eventId` is provided, the hook also manages the delete confirmation
+ * flow (`showDeleteConfirm`, `requestDelete`, `confirmDelete`, `cancelDelete`).
+ * The confirmation resets automatically when `eventId` changes.
+ */
+export function useDeleteMessage({
+    t,
+    roomId,
+    senderId,
+    eventId,
+    onSuccess,
+}: {
+    t: TFunction
+    roomId: MatrixRoom['id']
+    senderId: string
+    eventId?: RpcTimelineEventItemId | null
+    onSuccess?: () => void
+}) {
+    const [isDeleting, setIsDeleting] = useState(false)
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+    const fedimint = useFedimint()
+    const toast = useToast()
+    const matrixAuth = useCommonSelector(selectMatrixAuth)
+    const selfPowerLevel = useCommonSelector(s =>
+        selectMatrixRoomSelfPowerLevel(s, roomId),
+    )
+    const roomPowerLevels = useCommonSelector(s =>
+        selectMatrixRoomPowerLevels(s, roomId),
+    )
+
+    // you can delete your own messages, or others messages if you are a moderator or admin
+    // if rooms are configured with the redact power level we should respect it
+    // otherwise fallback to Moderator as minimum power level for deleting others' messages
+    const sentByMe = senderId === matrixAuth?.userId
+    const redactLevel = roomPowerLevels?.redact ?? MatrixPowerLevel.Moderator
+    const canDelete =
+        sentByMe ||
+        (!!selfPowerLevel &&
+            isPowerLevelGreaterOrEqual(selfPowerLevel, redactLevel))
+
+    // Reset confirmation when the target message changes
+    useEffect(() => {
+        setShowDeleteConfirm(false)
+    }, [eventId])
+
+    const confirmDeleteMessage = useCallback(async () => {
+        if (!roomId || !eventId) return
+        setIsDeleting(true)
+        try {
+            await fedimint.matrixDeleteMessage(roomId, eventId, null)
+            onSuccess && onSuccess()
+        } catch (e) {
+            toast.error(t, e, 'errors.unknown-error')
+        } finally {
+            setIsDeleting(false)
+        }
+    }, [roomId, eventId, fedimint, t, toast, onSuccess])
+
+    return {
+        canDelete,
+        isDeleting,
+        showDeleteConfirm,
+        setShowDeleteConfirm,
+        confirmDeleteMessage,
+    }
 }

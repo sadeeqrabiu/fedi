@@ -29,6 +29,8 @@ import React, {
 } from 'react'
 
 import {
+    ParsedBip21,
+    ParsedBitcoinAddress,
     ParsedBolt11,
     ParsedCashuEcash,
     ParsedFederationInvite,
@@ -36,10 +38,21 @@ import {
     ParsedLnurlWithdraw,
 } from '@fedi/common/types'
 
+import { settingsCompleteRecoveryAssistRoute } from '../constants/routes'
+
 interface RouteStateByPath {
-    '/send': ParsedLnurlPay | ParsedBolt11 | ParsedCashuEcash
+    '/send':
+        | ParsedLnurlPay
+        | ParsedBolt11
+        | ParsedCashuEcash
+        | ParsedBitcoinAddress
+        | ParsedBip21
     '/request': ParsedLnurlWithdraw
     '/onboarding/join': ParsedFederationInvite
+    [settingsCompleteRecoveryAssistRoute]: {
+        recoveryId: string
+        videoPath: string
+    }
 }
 
 type RouteStateFn = <

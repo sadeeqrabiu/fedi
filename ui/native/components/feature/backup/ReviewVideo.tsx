@@ -38,20 +38,22 @@ const ReviewVideo = ({ onConfirmVideo }: Props) => {
             try {
                 if (!videoFile) throw new Error('No video file found')
 
-                // Copy file to our temp directory so rust can read it
-                const filename = Math.random().toString(20)
-                const dest = `${RNFS.TemporaryDirectoryPath}/${filename}.mp4`
+                const exists = await RNFS.exists(videoFile.path)
+                if (!exists) throw new Error('Source video missing')
+
+                const filename = `${Math.random().toString(20)}.mp4`
+                const dest = `${RNFS.TemporaryDirectoryPath}/${filename}`
+
                 await RNFS.copyFile(videoFile.path, dest)
+
                 onConfirmVideo(dest)
             } catch (e) {
-                log.error('copy failed', e)
+                log.error('copyVideoAndProceed', e)
                 return
             }
         }
         if (confirmingVideo) {
-            setTimeout(() => {
-                copyVideoAndProceed()
-            })
+            copyVideoAndProceed()
         }
     }, [confirmingVideo, onConfirmVideo, videoFile])
 

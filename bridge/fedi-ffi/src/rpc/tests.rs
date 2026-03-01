@@ -13,7 +13,7 @@ use assert_matches::assert_matches;
 use bridge::RuntimeExt as _;
 use devi::DevFed;
 use devimint::cmd;
-use devimint::util::{FedimintCli, LnCli};
+use devimint::util::FedimintCli;
 use federations::federation_sm::FederationState;
 use federations::federation_v2::FederationV2;
 use fedi_social_client::common::VerificationDocument;
@@ -21,7 +21,7 @@ use fedimint_core::db::IDatabaseTransactionOpsCore;
 use fedimint_core::encoding::Encodable;
 use fedimint_core::task::sleep_in_test;
 use fedimint_core::util::backoff_util::aggressive_backoff;
-use fedimint_core::util::{retry, BoxFuture};
+use fedimint_core::util::{retry, BoxFuture, FmtCompact as _, FmtCompactAnyhow as _};
 use fedimint_core::Amount;
 use fedimint_logging::TracingSetup;
 use nostr::nips::nip44;
@@ -79,28 +79,8 @@ async fn cli_generate_ecash(amount: fedimint_core::Amount) -> anyhow::Result<Str
     Ok(ecash_string)
 }
 
-async fn cli_generate_invoice(amount: &Amount) -> anyhow::Result<(Bolt11Invoice, String)> {
-    let label = format!("bridge-tests-{}", rand::random::<u128>());
-    let invoice_string = cmd!(LnCli, "invoice", amount.msats, &label, &label)
-        .out_json()
-        .await?["bolt11"]
-        .as_str()
-        .map(|s| s.to_owned())
-        .unwrap();
-    Ok((Bolt11Invoice::from_str(&invoice_string)?, label))
-}
-
 async fn cli_receive_ecash(ecash: String) -> anyhow::Result<()> {
     cmd!(FedimintCli, "reissue", ecash).run().await?;
-    Ok(())
-}
-
-async fn cln_wait_invoice(label: &str) -> anyhow::Result<()> {
-    let status = cmd!(LnCli, "waitinvoice", label).out_json().await?["status"]
-        .as_str()
-        .map(|s| s.to_owned())
-        .unwrap();
-    assert_eq!(status, "paid");
     Ok(())
 }
 
@@ -150,11 +130,6 @@ async fn bitcoin_cli_send_to_address(address: &str, amount: &str) -> anyhow::Res
     Ok(())
 }
 
-async fn cln_pay_invoice(invoice_string: &str) -> anyhow::Result<()> {
-    cmd!(LnCli, "pay", invoice_string).run().await?;
-    Ok(())
-}
-
 async fn join_test_fed_recovery(
     bridge: &BridgeFull,
     recover_from_scratch: bool,
@@ -188,7 +163,7 @@ async fn tests_wrapper_for_bridge() -> anyhow::Result<()> {
     macro_rules! tests_array {
         ($($test_name:expr),* $(,)?) => {
             [$(
-                (stringify!($test_name), Box::pin($test_name(dev_fed.clone())) as BoxFuture<_>)
+                (stringify!($test_name), Box::pin($test_name(dev_fed.clone())) as BoxFuture<anyhow::Result<()>>)
             ),*]
         };
     }
@@ -206,8 +181,8 @@ async fn tests_wrapper_for_bridge() -> anyhow::Result<()> {
         multispend_tests::test_multispend_group_rejection,
         sp_transfer_tests::test_end_to_end,
         sp_transfer_tests::test_receiver_joins_federation_later,
-        // TODO: re-enable
-        // test_lightning_send_and_receive,
+        test_lightning_send_and_receive,
+        test_lnurl_receive,
         test_ecash,
         test_ecash_overissue,
         test_on_chain,
@@ -235,6 +210,7 @@ async fn tests_wrapper_for_bridge() -> anyhow::Result<()> {
         test_community_v2_migration,
         nostr_tests::test_nostr_community_workflow,
         nostr_tests::test_nostr_community_preview_join_leave,
+        nostr_tests::test_nostr_community_deletion,
         test_existing_device_identifier_v2_migration,
         test_nip44_encrypt_and_decrypt,
     ];
@@ -270,18 +246,26 @@ async fn tests_wrapper_for_bridge() -> anyhow::Result<()> {
     while let Some(res) = tests_set.join_next_with_id().await {
         match res {
             Err(e) => {
-                warn!("test {} failed: {}", &tests_names[&e.id()], e);
+                warn!("test {} failed: {}", &tests_names[&e.id()], e.fmt_compact());
                 // goal: cancel background tasks before returning and ending tokio runtime
                 // so devfed only gets dropped while tokio runtime is alive
                 tests_set.shutdown().await;
-                bail!("test {} failed: {}", &tests_names[&e.id()], e);
+                bail!("test {} failed: {}", &tests_names[&e.id()], e.fmt_compact());
             }
             Ok((id, Err(e))) => {
-                warn!("test {} failed: {}", &tests_names[&id], e);
+                warn!(
+                    "test {} failed: {}",
+                    &tests_names[&id],
+                    e.fmt_compact_anyhow()
+                );
                 // goal: cancel background tasks before returning and ending tokio runtime
                 // so devfed only gets dropped while tokio runtime is alive
                 tests_set.shutdown().await;
-                bail!("test {} failed: {}", &tests_names[&id], e);
+                bail!(
+                    "test {} failed: {}",
+                    &tests_names[&id],
+                    e.fmt_compact_anyhow()
+                );
             }
             Ok((id, Ok(_))) => {
                 info!("test {} OK", &tests_names[&id]);
@@ -292,7 +276,7 @@ async fn tests_wrapper_for_bridge() -> anyhow::Result<()> {
 }
 
 async fn test_doesnt_overwrite_seed_in_invalid_fedi_file(_dev_fed: DevFed) -> anyhow::Result<()> {
-    let td = TestDevice::new();
+    let td = TestDevice::new().await?;
     let invalid_fedi_file = String::from(r#"{"format_version": 0, "root_seed": "abcd"}"#);
     td.storage()
         .await?
@@ -312,7 +296,7 @@ async fn test_doesnt_overwrite_seed_in_invalid_fedi_file(_dev_fed: DevFed) -> an
 }
 
 async fn test_join_and_leave_and_join(_dev_fed: DevFed) -> anyhow::Result<()> {
-    let td = TestDevice::new();
+    let td = TestDevice::new().await?;
     let bridge = td.bridge_full().await?;
     let env_invite_code = std::env::var("FM_INVITE_CODE").unwrap();
     joinFederation(bridge, env_invite_code.clone(), false).await?;
@@ -342,7 +326,7 @@ async fn test_join_and_leave_and_join(_dev_fed: DevFed) -> anyhow::Result<()> {
 }
 
 async fn test_join_concurrent(_dev_fed: DevFed) -> anyhow::Result<()> {
-    let mut tb = TestDevice::new();
+    let mut tb = TestDevice::new().await?;
     let federation_id;
     let amount;
     // first app launch
@@ -395,21 +379,22 @@ async fn wait_for_federation_loading(
 }
 
 #[allow(dead_code)]
-async fn test_lightning_send_and_receive() -> anyhow::Result<()> {
+async fn test_lightning_send_and_receive(dev_fed: DevFed) -> anyhow::Result<()> {
     // Vec of tuple of (send_ppm, receive_ppm)
     let fee_ppm_values = vec![(0, 0), (10, 5), (100, 50)];
     for (send_ppm, receive_ppm) in fee_ppm_values {
-        test_lightning_send_and_receive_with_fedi_fees(send_ppm, receive_ppm).await?;
+        test_lightning_send_and_receive_with_fedi_fees(&dev_fed, send_ppm, receive_ppm).await?;
     }
 
     Ok(())
 }
 
 async fn test_lightning_send_and_receive_with_fedi_fees(
+    dev_fed: &DevFed,
     fedi_fees_send_ppm: u64,
     fedi_fees_receive_ppm: u64,
 ) -> anyhow::Result<()> {
-    let td = TestDevice::new();
+    let td = TestDevice::new().await?;
     let (bridge, federation) = (td.bridge_full().await?, td.join_default_fed().await?);
     setLightningModuleFediFeeSchedule(
         bridge,
@@ -432,7 +417,10 @@ async fn test_lightning_send_and_receive_with_fedi_fees(
     )
     .await?;
 
-    cln_pay_invoice(&invoice_string).await?;
+    dev_fed
+        .gw_ldk
+        .pay_invoice(Bolt11Invoice::from_str(&invoice_string).expect("Invoice must be valid"))
+        .await?;
 
     // check for event of type transaction that has ln_state
     'check: loop {
@@ -467,22 +455,132 @@ async fn test_lightning_send_and_receive_with_fedi_fees(
 
     // get invoice
     let send_amount = Amount::from_sats(50);
-    let (invoice, label) = cli_generate_invoice(&send_amount).await?;
-    let invoice_string = invoice.to_string();
+    let invoice = dev_fed.gw_ldk.create_invoice(send_amount.msats).await?;
 
     // check balance
     payInvoice(
         federation.clone(),
-        invoice_string,
+        invoice.to_string(),
         FrontendMetadata::default(),
     )
     .await?;
 
-    // check that core-lightning got paid
-    cln_wait_invoice(&label).await?;
+    dev_fed
+        .gw_ldk
+        .wait_bolt11_invoice(invoice.payment_hash().consensus_encode_to_vec())
+        .await?;
 
     // TODO shaurya unsure how to account for gateway fee when verifying fedi fee
     // amount
+    Ok(())
+}
+
+async fn test_lnurl_receive(dev_fed: DevFed) -> anyhow::Result<()> {
+    // Try to pay same user 10x via lnurl
+    {
+        let td = TestDevice::new().await?;
+        let (_bridge, federation) = (td.bridge_full().await?, td.join_default_fed().await?);
+        let td_lnurl = getRecurringdLnurl(federation.clone()).await?;
+
+        for count in 1..=10 {
+            let prev_balance = federation.get_balance().await;
+
+            // Use static method to get invoice from LNURL
+            let receive_amount = fedimint_core::Amount::from_sats(count * 100);
+            let invoice =
+                fedimint_ln_client::get_invoice(&td_lnurl, Some(receive_amount), None).await?;
+
+            // Pay invoice using gateway's node
+            dev_fed.gw_ldk.pay_invoice(invoice).await?;
+
+            // check for event of type transaction that has ln_state
+            'check: loop {
+                let events = td.event_sink().events();
+                for (_, ev_body) in events
+                    .iter()
+                    .rev()
+                    .filter(|(kind, _)| kind == "transaction")
+                {
+                    let ev_body = serde_json::from_str::<TransactionEvent>(ev_body).unwrap();
+                    let transaction = ev_body.transaction;
+                    if matches!(
+                        transaction.kind,
+                        RpcTransactionKind::LnRecurringdReceive {
+                            state: Some(RpcLnReceiveState::Claimed),
+                            ..
+                        }
+                    ) && transaction.amount.0.msats == count * 100 * 1000
+                    {
+                        break 'check;
+                    }
+                }
+
+                fedimint_core::task::sleep_in_test(
+                    "waiting for external lnurl recv",
+                    Duration::from_millis(1000),
+                )
+                .await;
+            }
+
+            assert_eq!(
+                receive_amount,
+                federation.get_balance().await.saturating_sub(prev_balance),
+            );
+        }
+    }
+
+    // Try to pay 10 different users back-to-back with lnurl
+    {
+        for _count in 1..=10 {
+            let td = TestDevice::new().await?;
+            let (_bridge, federation) = (td.bridge_full().await?, td.join_default_fed().await?);
+            let td_lnurl = getRecurringdLnurl(federation.clone()).await?;
+
+            let prev_balance = federation.get_balance().await;
+
+            // Use static method to get invoice from LNURL
+            let receive_amount = fedimint_core::Amount::from_sats(100);
+            let invoice =
+                fedimint_ln_client::get_invoice(&td_lnurl, Some(receive_amount), None).await?;
+
+            // Pay invoice using gateway's node
+            dev_fed.gw_ldk.pay_invoice(invoice).await?;
+
+            // check for event of type transaction that has ln_state
+            'check: loop {
+                let events = td.event_sink().events();
+                for (_, ev_body) in events
+                    .iter()
+                    .rev()
+                    .filter(|(kind, _)| kind == "transaction")
+                {
+                    let ev_body = serde_json::from_str::<TransactionEvent>(ev_body).unwrap();
+                    let transaction = ev_body.transaction;
+                    if matches!(
+                        transaction.kind,
+                        RpcTransactionKind::LnRecurringdReceive {
+                            state: Some(RpcLnReceiveState::Claimed),
+                            ..
+                        }
+                    ) {
+                        break 'check;
+                    }
+                }
+
+                fedimint_core::task::sleep_in_test(
+                    "waiting for external lnurl recv",
+                    Duration::from_millis(1000),
+                )
+                .await;
+            }
+
+            assert_eq!(
+                receive_amount,
+                federation.get_balance().await.saturating_sub(prev_balance),
+            );
+        }
+    }
+
     Ok(())
 }
 
@@ -500,7 +598,7 @@ async fn test_ecash_with_fedi_fees(
     fedi_fees_send_ppm: u64,
     fedi_fees_receive_ppm: u64,
 ) -> anyhow::Result<()> {
-    let td = TestDevice::new();
+    let td = TestDevice::new().await?;
     let (bridge, federation) = (td.bridge_full().await?, td.join_default_fed().await?);
     setMintModuleFediFeeSchedule(
         bridge,
@@ -599,7 +697,7 @@ async fn wait_for_ecash_reissue(federation: &FederationV2) -> Result<(), anyhow:
 }
 
 async fn test_ecash_overissue(_dev_fed: DevFed) -> anyhow::Result<()> {
-    let td = TestDevice::new();
+    let td = TestDevice::new().await?;
     let (bridge, federation) = (td.bridge_full().await?, td.join_default_fed().await?);
 
     // receive ecash
@@ -663,7 +761,7 @@ async fn test_on_chain_with_fedi_fees(
     fedi_fees_send_ppm: u64,
     fedi_fees_receive_ppm: u64,
 ) -> anyhow::Result<()> {
-    let td = TestDevice::new();
+    let td = TestDevice::new().await?;
     let (bridge, federation) = (td.bridge_full().await?, td.join_default_fed().await?);
     setWalletModuleFediFeeSchedule(
         bridge,
@@ -746,7 +844,7 @@ async fn test_on_chain_with_fedi_fees_with_restart(
     fedi_fees_receive_ppm: u64,
 ) -> anyhow::Result<()> {
     let (address, federation_id);
-    let mut td = TestDevice::new();
+    let mut td = TestDevice::new().await?;
     // setup, generate address, shutdown
     {
         let bridge = td.bridge_full().await?;
@@ -835,7 +933,7 @@ async fn test_on_chain_with_fedi_fees_with_restart(
 }
 
 async fn test_ecash_cancel(_dev_fed: DevFed) -> anyhow::Result<()> {
-    let td = TestDevice::new();
+    let td = TestDevice::new().await?;
     let federation = td.join_default_fed().await?;
 
     // receive ecash
@@ -882,7 +980,7 @@ async fn test_backup_and_recovery_inner(from_scratch: bool) -> anyhow::Result<()
     let sp_amount_to_deposit = Amount::from_msats(110_000);
     // create a backup on device 1
     {
-        let mut td = TestDevice::new();
+        let mut td = TestDevice::new().await?;
         let bridge = td.bridge_full().await?;
         let federation = td.join_default_fed().await?;
         // receive ecash
@@ -933,7 +1031,7 @@ async fn test_backup_and_recovery_inner(from_scratch: bool) -> anyhow::Result<()
     }
 
     // create new bridge which hasn't joined federation yet and recover mnemnonic
-    let td = TestDevice::new();
+    let td = TestDevice::new().await?;
     let recovery_bridge = td.bridge_maybe_onboarding().await?;
     restoreMnemonic(recovery_bridge.try_get()?, mnemonic).await?;
     // Re-register device as index 0 since it's the same device
@@ -980,7 +1078,7 @@ async fn test_backup_and_recovery_inner(from_scratch: bool) -> anyhow::Result<()
 }
 
 async fn test_parse_ecash(_dev_fed: DevFed) -> anyhow::Result<()> {
-    let td = TestDevice::new();
+    let td = TestDevice::new().await?;
     let bridge = td.bridge_full().await?;
     let v2_ecash = "AgEEsuFO5gD3AwQBmW/h68gy6W5cgnl93aTdduN1OnnFofSCqjth03Q6CA+fXnKlVXQSIVSLqcHzsbhozAuo2q5jPMsO6XMZZZXaYvZyIdXzCUIuDNhdCHkGJWAgAa9M5zsSPPVWDVeCWgkerg0Z+Xv8IQGMh7rsgpLh77NCSVRKA2i4fBYNwPglSbkGs42Yllmz6HJtgmmtl/tdjcyVSR30Nc2cfkZYTJcEEnRjQAGC8ZX5eLYQB8rCAZiX5/gQX2QtjasZMy+BJ67kJ0klVqsS9G1IVWhea6ILISOd9H1MJElma8aHBiWBaWeGjrCXru8Ns7Lz4J18CbxFdHyWEQ==";
     parseEcash(&bridge.federations, v2_ecash.into()).await?;
@@ -992,7 +1090,7 @@ async fn test_social_backup_and_recovery(_dev_fed: DevFed) -> anyhow::Result<()>
         return Ok(());
     }
 
-    let mut td1 = TestDevice::new();
+    let mut td1 = TestDevice::new().await?;
     let original_bridge = td1.bridge_full().await?;
     let federation = td1.join_default_fed().await?;
 
@@ -1055,10 +1153,10 @@ async fn test_social_backup_and_recovery(_dev_fed: DevFed) -> anyhow::Result<()>
     td1.shutdown().await?;
 
     // use new bridge from here (simulating a new app install)
-    let td2 = TestDevice::new();
+    let td2 = TestDevice::new().await?;
     let recovery_bridge = td2.bridge_maybe_onboarding().await?;
 
-    let td3 = TestDevice::new();
+    let td3 = TestDevice::new().await?;
     let guardian_bridge = td3.bridge_full().await?;
     td3.join_default_fed().await?;
 
@@ -1178,7 +1276,7 @@ async fn test_stability_pool_with_fedi_fees(
     fedi_fees_send_ppm: u64,
     fedi_fees_receive_ppm: u64,
 ) -> anyhow::Result<()> {
-    let td = TestDevice::new();
+    let td = TestDevice::new().await?;
     let bridge = td.bridge_full().await?;
     let federation = td.join_default_fed().await?;
     setStabilityPoolModuleFediFeeSchedule(
@@ -1284,6 +1382,16 @@ async fn test_stability_pool_with_fedi_fees(
     Ok(())
 }
 
+async fn spv2_force_sync(federation: &Arc<FederationV2>) {
+    federation
+        .spv2_sync_service
+        .get()
+        .expect("Sync service must be initialized")
+        .update_once()
+        .await
+        .expect("Sync service update mustn't fail");
+}
+
 async fn test_spv2(_dev_fed: DevFed) -> anyhow::Result<()> {
     if should_skip_test_using_stock_fedimintd() {
         return Ok(());
@@ -1302,7 +1410,7 @@ async fn test_spv2_with_fedi_fees(
     fedi_fees_send_ppm: u64,
     fedi_fees_receive_ppm: u64,
 ) -> anyhow::Result<()> {
-    let td = TestDevice::new();
+    let td = TestDevice::new().await?;
     let bridge = td.bridge_full().await?;
     let federation = td.join_default_fed().await?;
     setSPv2ModuleFediFeeSchedule(
@@ -1357,6 +1465,8 @@ async fn test_spv2_with_fedi_fees(
             .expect("Can't fail"),
         federation.get_balance().await,
     );
+
+    spv2_force_sync(federation).await;
     let RpcSPv2CachedSyncResponse { sync_response, .. } =
         spv2AccountInfo(federation.clone()).await?;
     assert_eq!(sync_response.idle_balance.0, Amount::ZERO);
@@ -1400,7 +1510,8 @@ async fn test_spv2_with_fedi_fees(
         Ok(RpcTransactionListEntry {
             transaction: RpcTransaction {
                 kind: RpcTransactionKind::SPV2Withdrawal {
-                    state: rpc_types::RpcSPV2WithdrawalState::CompletedWithdrawal { .. }
+                    state: rpc_types::RpcSPV2WithdrawalState::CompletedWithdrawal { .. },
+                    ..
                 },
                 ..
             },
@@ -1433,6 +1544,8 @@ async fn test_spv2_with_fedi_fees(
             .expect("Can't fail"),
         federation.get_balance().await,
     );
+
+    spv2_force_sync(federation).await;
     let RpcSPv2CachedSyncResponse { sync_response, .. } =
         spv2AccountInfo(federation.clone()).await?;
     assert_eq!(sync_response.idle_balance.0, Amount::ZERO);
@@ -1462,7 +1575,7 @@ async fn test_spv2_with_fedi_fees(
     // fully drained and we shouldn't expect to have a lingering pending deposit
     loop {
         // Force an SPv2 sync and wait for it to complete
-        federation.spv2_force_sync();
+        spv2_force_sync(federation).await;
 
         let transactions = listTransactions(federation.clone(), None, None).await?;
         let third_last_tx = transactions.get(2).expect("must exist");
@@ -1488,7 +1601,7 @@ async fn test_spv2_with_fedi_fees(
 }
 
 async fn test_lnurl_sign_message(_dev_fed: DevFed) -> anyhow::Result<()> {
-    let td = TestDevice::new();
+    let td = TestDevice::new().await?;
     let bridge = td.bridge_full().await?;
     let k1 = String::from("cfcb7616d615252180e392f509207e1f610f8d6106588c61c3e7bbe8577e4c4c");
     let message = Message::from_digest_slice(&hex::decode(k1)?)?;
@@ -1531,7 +1644,7 @@ async fn test_lnurl_sign_message(_dev_fed: DevFed) -> anyhow::Result<()> {
 
 async fn test_federation_preview(_dev_fed: DevFed) -> anyhow::Result<()> {
     let invite_code = std::env::var("FM_INVITE_CODE").unwrap();
-    let mut td = TestDevice::new();
+    let mut td = TestDevice::new().await?;
     let bridge = td.bridge_full().await?;
     assert_matches!(
         federationPreview(&bridge.federations, invite_code.clone())
@@ -1564,7 +1677,7 @@ async fn test_federation_preview(_dev_fed: DevFed) -> anyhow::Result<()> {
 
     // query preview again w/ new bridge (recovered using mnemonic), it should be
     // "returning"
-    let td2 = TestDevice::new();
+    let td2 = TestDevice::new().await?;
     let bridge = td2.bridge_maybe_onboarding().await?;
     restoreMnemonic(bridge.try_get()?, mnemonic).await?;
     // Re-register device as index 0 since it's the same device
@@ -1583,7 +1696,7 @@ async fn test_federation_preview(_dev_fed: DevFed) -> anyhow::Result<()> {
 
 async fn test_onboarding_fails_without_restore_mnemonic(_dev_fed: DevFed) -> anyhow::Result<()> {
     let mock_fedi_api = Arc::new(MockFediApi::default());
-    let mut td = TestDevice::new();
+    let mut td = TestDevice::new().await?;
     td.with_fedi_api(mock_fedi_api.clone());
     let backup_bridge = td.bridge_full().await?;
     let federation = td.join_default_fed().await?;
@@ -1600,7 +1713,7 @@ async fn test_onboarding_fails_without_restore_mnemonic(_dev_fed: DevFed) -> any
     td.shutdown().await?;
 
     // create new bridge which hasn't joined federation yet and recover mnemnonic
-    let mut td2 = TestDevice::new();
+    let mut td2 = TestDevice::new().await?;
     td2.with_fedi_api(mock_fedi_api);
     let recovery_bridge = td2.bridge_maybe_onboarding().await?;
     assert!(
@@ -1616,7 +1729,7 @@ async fn test_transfer_device_registration_no_feds(_dev_fed: DevFed) -> anyhow::
     }
 
     let mock_fedi_api = Arc::new(MockFediApi::default());
-    let mut td1 = TestDevice::new();
+    let mut td1 = TestDevice::new().await?;
     td1.with_fedi_api(mock_fedi_api.clone());
     let bridge_1 = td1.bridge_full().await?;
 
@@ -1628,7 +1741,7 @@ async fn test_transfer_device_registration_no_feds(_dev_fed: DevFed) -> anyhow::
     let mnemonic = getMnemonic(bridge_1.runtime.clone()).await?;
 
     // create new bridge which hasn't joined federation yet and recover mnemnonic
-    let mut td2 = TestDevice::new();
+    let mut td2 = TestDevice::new().await?;
     td2.with_fedi_api(mock_fedi_api.clone());
     let bridge_2 = td2.bridge_maybe_onboarding().await?;
     restoreMnemonic(bridge_2.try_get()?, mnemonic.clone()).await?;
@@ -1661,7 +1774,7 @@ async fn test_transfer_device_registration_no_feds(_dev_fed: DevFed) -> anyhow::
     td1.shutdown().await?;
 
     // Create 3rd bridge which hasn't joined federation yet and recover mnemnonic
-    let mut td3 = TestDevice::new();
+    let mut td3 = TestDevice::new().await?;
     td3.with_fedi_api(mock_fedi_api);
     let bridge_3 = td3.bridge_maybe_onboarding().await?;
     restoreMnemonic(bridge_3.try_get()?, mnemonic.clone()).await?;
@@ -1682,7 +1795,7 @@ async fn test_transfer_device_registration_post_recovery(_dev_fed: DevFed) -> an
     }
 
     let mock_fedi_api = Arc::new(MockFediApi::default());
-    let mut td1 = TestDevice::new();
+    let mut td1 = TestDevice::new().await?;
     td1.with_fedi_api(mock_fedi_api.clone());
     let backup_bridge = td1.bridge_full().await?;
     let federation = td1.join_default_fed().await?;
@@ -1722,7 +1835,7 @@ async fn test_transfer_device_registration_post_recovery(_dev_fed: DevFed) -> an
     let mnemonic = getMnemonic(backup_bridge.runtime.clone()).await?;
 
     // create new bridge which hasn't joined federation yet and recover mnemnonic
-    let mut td2 = TestDevice::new();
+    let mut td2 = TestDevice::new().await?;
     td2.with_fedi_api(mock_fedi_api.clone());
     let recovery_bridge = td2.bridge_maybe_onboarding().await?;
     restoreMnemonic(recovery_bridge.try_get()?, mnemonic).await?;
@@ -1795,7 +1908,7 @@ async fn test_new_device_registration_post_recovery(_dev_fed: DevFed) -> anyhow:
     }
 
     let mock_fedi_api = Arc::new(MockFediApi::default());
-    let mut td1 = TestDevice::new();
+    let mut td1 = TestDevice::new().await?;
     td1.with_fedi_api(mock_fedi_api.clone());
     let backup_bridge = td1.bridge_full().await?;
     let federation = td1.join_default_fed().await?;
@@ -1822,7 +1935,7 @@ async fn test_new_device_registration_post_recovery(_dev_fed: DevFed) -> anyhow:
     td1.shutdown().await?;
 
     // create new bridge which hasn't joined federation yet and recover mnemnonic
-    let mut td2 = TestDevice::new();
+    let mut td2 = TestDevice::new().await?;
     td2.with_fedi_api(mock_fedi_api.clone());
     let recovery_bridge = td2.bridge_maybe_onboarding().await?;
     restoreMnemonic(recovery_bridge.try_get()?, mnemonic).await?;
@@ -1870,7 +1983,7 @@ const COMMUNITY_JSON_1: &str = r#"{
     }"#;
 
 async fn test_preview_and_join_community(_dev_fed: DevFed) -> anyhow::Result<()> {
-    let td = TestDevice::new();
+    let td = TestDevice::new().await?;
     let bridge = td.bridge_full().await?;
 
     let mut server = mockito::Server::new_async().await;
@@ -1919,13 +2032,13 @@ async fn test_preview_and_join_community(_dev_fed: DevFed) -> anyhow::Result<()>
         .get(&community_invite.to_string())
         .unwrap()
         .clone();
-    assert!(memory_community.meta.read().await.to_owned() == app_state_community.meta);
+    assert!(memory_community.info.read().await.to_owned() == app_state_community);
 
     Ok(())
 }
 
 async fn test_list_and_leave_community(_dev_fed: DevFed) -> anyhow::Result<()> {
-    let td = TestDevice::new();
+    let td = TestDevice::new().await?;
     let bridge = td.bridge_full().await?;
 
     let mut server = mockito::Server::new_async().await;
@@ -2002,7 +2115,7 @@ async fn test_list_and_leave_community(_dev_fed: DevFed) -> anyhow::Result<()> {
 }
 
 async fn test_community_meta_bg_refresh(_dev_fed: DevFed) -> anyhow::Result<()> {
-    let td = TestDevice::new();
+    let td = TestDevice::new().await?;
     let bridge = td.bridge_full().await?;
 
     let mut server = mockito::Server::new_async().await;
@@ -2039,9 +2152,9 @@ async fn test_community_meta_bg_refresh(_dev_fed: DevFed) -> anyhow::Result<()> 
         .get(&community_invite.to_string())
         .unwrap()
         .clone();
-    assert!(memory_community.meta.read().await.to_owned() == app_state_community.meta);
+    assert!(memory_community.info.read().await.to_owned() == app_state_community);
     assert!(
-        serde_json::to_value(memory_community.meta.read().await.to_owned()).unwrap()
+        serde_json::to_value(memory_community.info.read().await.to_owned().json).unwrap()
             == serde_json::from_str::<serde_json::Value>(COMMUNITY_JSON_0).unwrap()
     );
 
@@ -2072,17 +2185,17 @@ async fn test_community_meta_bg_refresh(_dev_fed: DevFed) -> anyhow::Result<()> 
             .get(&community_invite.to_string())
             .unwrap()
             .clone();
-        if memory_community.meta.read().await.to_owned() != app_state_community.meta {
+        if memory_community.info.read().await.to_owned() != app_state_community {
             continue;
         }
-        if serde_json::to_value(memory_community.meta.read().await.to_owned()).unwrap()
+        if serde_json::to_value(memory_community.info.read().await.to_owned().json).unwrap()
             == serde_json::from_str::<serde_json::Value>(COMMUNITY_JSON_0).unwrap()
         {
             continue;
         }
 
         assert!(
-            serde_json::to_value(memory_community.meta.read().await.to_owned()).unwrap()
+            serde_json::to_value(memory_community.info.read().await.to_owned().json).unwrap()
                 == serde_json::from_str::<serde_json::Value>(COMMUNITY_JSON_1).unwrap()
         );
         break;
@@ -2092,7 +2205,7 @@ async fn test_community_meta_bg_refresh(_dev_fed: DevFed) -> anyhow::Result<()> 
 }
 
 async fn test_community_v2_migration(_dev_fed: DevFed) -> anyhow::Result<()> {
-    let td = TestDevice::new();
+    let td = TestDevice::new().await?;
     let bridge = td.bridge_full().await?;
 
     // Initially our FirstCommunityInviteCodeState should be "NeverSet"
@@ -2143,7 +2256,7 @@ async fn test_community_v2_migration(_dev_fed: DevFed) -> anyhow::Result<()> {
     let v2_description = "Initial description".to_string();
     let v2_meta = BTreeMap::from([("description".to_string(), v2_description.clone())]);
     let migrate_to_v2_invite_code = {
-        let td2 = TestDevice::new();
+        let td2 = TestDevice::new().await?;
         let bridge2 = td2.bridge_full().await?;
 
         // Let's create a simple v2 community
@@ -2214,7 +2327,7 @@ async fn test_fee_remittance_on_startup(dev_fed: DevFed) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let mut td = TestDevice::new();
+    let mut td = TestDevice::new().await?;
     let bridge = td.bridge_full().await?;
     let federation = td.join_default_fed().await?;
     setStabilityPoolModuleFediFeeSchedule(bridge, federation.rpc_federation_id(), 21_000, 0)
@@ -2267,8 +2380,9 @@ async fn test_fee_remittance_on_startup(dev_fed: DevFed) -> anyhow::Result<()> {
     td.shutdown().await?;
 
     // Mock fee remittance endpoint
-    // some of amount is gateway fees
-    let fedi_fee_invoice = dev_fed.gw_ldk.create_invoice(102_691).await?;
+    // On restart, gateway cache may be empty so we use the full outstanding fee
+    // amount (no gateway fees subtracted)
+    let fedi_fee_invoice = dev_fed.gw_ldk.create_invoice(105_000).await?;
     let mut mock_fedi_api = MockFediApi::default();
     mock_fedi_api.set_fedi_fee_invoice(fedi_fee_invoice.clone());
     td.with_fedi_api(mock_fedi_api.into());
@@ -2296,11 +2410,12 @@ async fn test_fee_remittance_post_successful_tx(dev_fed: DevFed) -> anyhow::Resu
     }
 
     // Mock fee remittance endpoint
-    // some of amount is gateway fees
-    let fedi_fee_invoice = dev_fed.gw_ldk.create_invoice(102_691).await?;
+    // Gateway cache may be empty so we use the full outstanding fee amount
+    // (no gateway fees subtracted)
+    let fedi_fee_invoice = dev_fed.gw_ldk.create_invoice(105_000).await?;
     let mut mock_fedi_api = MockFediApi::default();
     mock_fedi_api.set_fedi_fee_invoice(fedi_fee_invoice.clone());
-    let mut td = TestDevice::new();
+    let mut td = TestDevice::new().await?;
     td.with_fedi_api(Arc::new(mock_fedi_api));
 
     // Setup bridge, join test federation, set SP send fee ppm
@@ -2359,7 +2474,7 @@ async fn test_fee_remittance_post_successful_tx(dev_fed: DevFed) -> anyhow::Resu
 }
 
 async fn test_recurring_lnurl(dev_fed: DevFed) -> anyhow::Result<()> {
-    let td = TestDevice::new();
+    let td = TestDevice::new().await?;
     let federation = td.join_default_fed().await?;
     let lnurl1 = federation
         .get_recurringd_lnurl(dev_fed.recurringd.api_url.clone())
@@ -2378,7 +2493,7 @@ async fn test_bridge_handles_federation_offline() -> anyhow::Result<()> {
     let mut dev_fed = DevFed::new_with_setup(4).await?;
     let invite_code = dev_fed.fed.invite_code()?;
 
-    let mut td = TestDevice::new();
+    let mut td = TestDevice::new().await?;
     let original_balance;
 
     // join federation while federation is running
@@ -2499,7 +2614,7 @@ async fn test_existing_device_identifier_v2_migration(_dev_fed: DevFed) -> anyho
     //         recreate bridge with different ID, borked
 
     // Create data directory and initialize bridge
-    let mut td = TestDevice::new();
+    let mut td = TestDevice::new().await?;
     {
         td.with_device_identifier("bridge:test:d4d743a7-b343-48e3-a5f9-90d032af3e98");
         let bridge = td.bridge_full().await?;
@@ -2585,7 +2700,7 @@ async fn test_existing_device_identifier_v2_migration(_dev_fed: DevFed) -> anyho
 }
 
 async fn test_nip44_encrypt_and_decrypt(_dev_fed: DevFed) -> anyhow::Result<()> {
-    let td = TestDevice::new();
+    let td = TestDevice::new().await?;
     let bridge = td.bridge_full().await?;
 
     let other_nsec = "nsec1u66skyesf45vd9w0u63q7qhfj2wnhjplxkympvh5t2q28h0lvz8qgglls9";
@@ -2632,11 +2747,11 @@ async fn test_stability_pool_external_transfer_in(_dev_fed: DevFed) -> anyhow::R
     // recorded in the transaction history with backfilled operation logs.
 
     // Create two test devices - sender and receiver
-    let td_sender = TestDevice::new();
+    let td_sender = TestDevice::new().await?;
     let bridge_sender = td_sender.bridge_full().await?;
     let federation_sender = td_sender.join_default_fed().await?;
 
-    let td_receiver = TestDevice::new();
+    let td_receiver = TestDevice::new().await?;
     let federation_receiver = td_receiver.join_default_fed().await?;
 
     // Sender receives some ecash first
@@ -2700,7 +2815,7 @@ async fn test_stability_pool_external_transfer_in(_dev_fed: DevFed) -> anyhow::R
     fedimint_core::task::sleep(Duration::from_secs(2)).await;
 
     let updated_receiver_txs = loop {
-        federation_receiver.spv2_force_sync();
+        spv2_force_sync(federation_receiver).await;
         let updated_receiver_txs =
             listTransactions(federation_receiver.clone(), None, None).await?;
         if !updated_receiver_txs.is_empty() {

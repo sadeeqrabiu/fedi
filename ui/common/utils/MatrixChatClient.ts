@@ -38,6 +38,7 @@ import {
     RpcRoomNotificationMode,
     RpcSerializedRoomInfo,
     RpcSPv2SyncResponse,
+    RpcSpTransferState,
     RpcTimelineItem,
 } from '../types/bindings'
 import {
@@ -107,6 +108,11 @@ interface MatrixChatClientEventMap {
         roomId: MatrixRoom['id']
         transactions: MultispendListedEvent[]
     }
+    spTransferStateUpdate: {
+        roomId: MatrixRoom['id']
+        eventId: string
+        state: RpcSpTransferState
+    }
     user: MatrixUser
     error: MatrixError
     auth: MatrixAuth
@@ -141,6 +147,10 @@ export class MatrixChatClient {
     private multispendAccountUnsubscribeMap: Record<
         MatrixRoom['id'],
         UnsubscribeFn | undefined
+    > = {}
+    private spTransferStateUnsubscribeMap: Record<
+        MatrixRoom['id'],
+        Record<string, UnsubscribeFn | undefined>
     > = {}
     private roomListUnsubscribe: UnsubscribeFn | undefined = undefined
     private syncStatusUnsubscribe: UnsubscribeFn | undefined = undefined
@@ -471,9 +481,29 @@ export class MatrixChatClient {
             .then(this.serializeUserDirectorySearchResponse)
     }
 
-    async fetchMatrixProfile(userId: MatrixUser['id']) {
-        // TODO: Add narrower types to matrixUserProfile RPC
-        return await this.fedimint.matrixUserProfile({ userId })
+    async fetchMatrixProfile(userId: MatrixUser['id']): Promise<MatrixUser> {
+        // TODO: narrow return type of matrixUserProfile RPC
+        const { data } = await this.fedimint.matrixUserProfile({ userId })
+
+        const displayname =
+            data && typeof data === 'object' && !Array.isArray(data)
+                ? (data as Record<string, unknown>).displayname
+                : undefined
+        const avatarUrl =
+            data && typeof data === 'object' && !Array.isArray(data)
+                ? (data as Record<string, unknown>).avatar_url
+                : undefined
+
+        return {
+            id: userId,
+            displayName: this.ensureDisplayName(
+                typeof displayname === 'string' ? displayname : null,
+            ),
+            avatarUrl:
+                typeof avatarUrl === 'string'
+                    ? mxcUrlToHttpUrl(avatarUrl, 200, 200, 'crop')
+                    : undefined,
+        }
     }
 
     async setDisplayName(displayName: string) {
@@ -739,7 +769,7 @@ export class MatrixChatClient {
                     // If it's a DM:
                     // - fetch the member since it's small and we use recent DM users.
                     // - HACK: observe all DMs to claim ecash in the background.
-                    if (serializedRoom.directUserId) {
+                    if (serializedRoom.isDirect) {
                         // TODO: remove this when members list is observable
                         this.observeRoomMembers(roomId).catch(err => {
                             log.warn(
@@ -824,6 +854,42 @@ export class MatrixChatClient {
 
             this.multispendEventUnsubscribeMap[roomId] = {
                 ...(this.multispendEventUnsubscribeMap[roomId] || {}),
+                [eventId]: undefined,
+            }
+        }
+    }
+
+    public async observeSpTransferState(roomId: string, eventId: string) {
+        if (this.spTransferStateUnsubscribeMap[roomId]?.[eventId] !== undefined)
+            return
+
+        const unsubscribe = this.fedimint.matrixSpTransferObserveState({
+            roomId,
+            eventId,
+            callback: state => {
+                this.emit('spTransferStateUpdate', {
+                    roomId,
+                    eventId,
+                    state,
+                })
+            },
+        })
+
+        this.spTransferStateUnsubscribeMap[roomId] = {
+            ...(this.spTransferStateUnsubscribeMap[roomId] || {}),
+            [eventId]: unsubscribe,
+        }
+    }
+
+    public async unobserveSpTransferState(roomId: string, eventId: string) {
+        const spTransferStateUnsubscribe =
+            this.spTransferStateUnsubscribeMap[roomId]?.[eventId]
+
+        if (spTransferStateUnsubscribe !== undefined) {
+            spTransferStateUnsubscribe()
+
+            this.spTransferStateUnsubscribeMap[roomId] = {
+                ...(this.spTransferStateUnsubscribeMap[roomId] || {}),
                 [eventId]: undefined,
             }
         }
@@ -928,6 +994,8 @@ export class MatrixChatClient {
             // TODO: HACK - move this to bridge
             roomState: 'invited',
             preview: null,
+            isDirect: false,
+            recencyStamp: null,
         }
     }
 

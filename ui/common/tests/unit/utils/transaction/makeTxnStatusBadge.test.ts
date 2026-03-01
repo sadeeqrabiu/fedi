@@ -2,42 +2,48 @@ import { makeTxnStatusBadge } from '../../../../utils/transaction'
 import {
     makeTestLnPayState,
     makeTestLnReceiveState,
-    makeTestMultispendTxnEntry,
-    makeTestMultispendWithdrawRequest,
     makeTestOnchainDepositState,
     makeTestOnchainWithdrawState,
     makeTestOOBReissueState,
     makeTestOOBSpendState,
-    makeTestRpcTxnEntry,
+    makeTestTxnEntry,
     makeTestSPDepositState,
     makeTestSPV2DepositState,
+    makeTestSPV2TransferInState,
     makeTestSPV2TransferOutState,
     makeTestSPV2WithdrawalState,
     makeTestSPWithdrawalState,
+    makeTestMultispendWithdrawalEventData,
 } from '../../../utils/transaction'
 
 describe('makeTxnStatusBadge', () => {
     it('should return "incoming" for completed transactions', () => {
-        const lnReceiveClaimed = makeTestRpcTxnEntry('lnReceive', {
+        const lnReceiveClaimed = makeTestTxnEntry('lnReceive', {
             state: makeTestLnReceiveState('claimed'),
         })
-        const lnurlClaimed = makeTestRpcTxnEntry('lnRecurringdReceive', {
+        const lnurlClaimed = makeTestTxnEntry('lnRecurringdReceive', {
             state: makeTestLnReceiveState('claimed'),
         })
-        const onchainDepositClaimed = makeTestRpcTxnEntry('onchainDeposit', {
+        const onchainDepositClaimed = makeTestTxnEntry('onchainDeposit', {
             state: makeTestOnchainDepositState('claimed'),
         })
-        const spWithdrawComplete = makeTestRpcTxnEntry('spWithdraw', {
+        const spWithdrawComplete = makeTestTxnEntry('spWithdraw', {
             state: makeTestSPWithdrawalState('completeWithdrawal'),
         })
-        const spv2WithdrawCompleted = makeTestRpcTxnEntry('sPV2Withdrawal', {
+        const spv2WithdrawCompleted = makeTestTxnEntry('sPV2Withdrawal', {
             state: makeTestSPV2WithdrawalState('completedWithdrawal'),
         })
-        const oobReceiveDone = makeTestRpcTxnEntry('oobReceive', {
+        const oobReceiveDone = makeTestTxnEntry('oobReceive', {
             state: makeTestOOBReissueState('done'),
         })
-        const multispendDeposit = makeTestMultispendTxnEntry('deposit')
-        const lnurlCreated = makeTestRpcTxnEntry('lnRecurringdReceive', {
+        const spv2TransferInMultispend = makeTestTxnEntry('sPV2TransferIn', {
+            state: makeTestSPV2TransferInState(
+                'completedTransfer',
+                'multispend',
+            ),
+        })
+        const multispendDeposit = makeTestTxnEntry('multispendDeposit')
+        const lnurlCreated = makeTestTxnEntry('lnRecurringdReceive', {
             state: makeTestLnReceiveState('created'),
         })
 
@@ -46,6 +52,7 @@ describe('makeTxnStatusBadge', () => {
         expect(makeTxnStatusBadge(onchainDepositClaimed)).toBe('incoming')
         expect(makeTxnStatusBadge(spWithdrawComplete)).toBe('incoming')
         expect(makeTxnStatusBadge(spv2WithdrawCompleted)).toBe('incoming')
+        expect(makeTxnStatusBadge(spv2TransferInMultispend)).toBe('incoming')
         expect(makeTxnStatusBadge(oobReceiveDone)).toBe('incoming')
         expect(makeTxnStatusBadge(multispendDeposit)).toBe('incoming')
         // TODO:TEST: This should NOT be the case - Set to "pending" if bug is fixed
@@ -53,52 +60,52 @@ describe('makeTxnStatusBadge', () => {
     })
 
     it('should return "outgoing" for sent transactions', () => {
-        const lnPaySuccess = makeTestRpcTxnEntry('lnPay', {
+        const lnPaySuccess = makeTestTxnEntry('lnPay', {
             state: makeTestLnPayState('success'),
         })
-        const onchainWithdrawSucceeded = makeTestRpcTxnEntry(
-            'onchainWithdraw',
-            {
-                state: makeTestOnchainWithdrawState('succeeded'),
-            },
-        )
-        const oobSendSuccess = makeTestRpcTxnEntry('oobSend', {
+        const onchainWithdrawSucceeded = makeTestTxnEntry('onchainWithdraw', {
+            state: makeTestOnchainWithdrawState('succeeded'),
+        })
+        const oobSendSuccess = makeTestTxnEntry('oobSend', {
             state: makeTestOOBSpendState('success'),
         })
-        const oobSendCreated = makeTestRpcTxnEntry('oobSend', {
+        const oobSendCreated = makeTestTxnEntry('oobSend', {
             state: makeTestOOBSpendState('created'),
         })
-        const oobSendCanceledFailure = makeTestRpcTxnEntry('oobSend', {
+        const oobSendCanceledFailure = makeTestTxnEntry('oobSend', {
             state: makeTestOOBSpendState('userCanceledFailure'),
         })
-        const spDepositComplete = makeTestRpcTxnEntry('spDeposit', {
+        const spDepositComplete = makeTestTxnEntry('spDeposit', {
             state: makeTestSPDepositState('completeDeposit'),
         })
-        const spv2DepositCompleted = makeTestRpcTxnEntry('sPV2Deposit', {
+        const spv2DepositCompleted = makeTestTxnEntry('sPV2Deposit', {
             state: makeTestSPV2DepositState('completedDeposit'),
         })
-        const spv2TransferOut = makeTestRpcTxnEntry('sPV2TransferOut', {
+        const spv2TransferOutSpTransferUi = makeTestTxnEntry(
+            'sPV2TransferOut',
+            {
+                state: makeTestSPV2TransferOutState(
+                    'completedTransfer',
+                    'spTransferUi',
+                ),
+            },
+        )
+        const spv2TransferOutMultispend = makeTestTxnEntry('sPV2TransferOut', {
             state: makeTestSPV2TransferOutState(
                 'completedTransfer',
                 'spTransferUi',
             ),
         })
-        const multispendWithdrawAccepted = makeTestMultispendTxnEntry(
-            'withdrawal',
+        const spv2TransferOutMatrix = makeTestTxnEntry('sPV2TransferOut', {
+            state: makeTestSPV2TransferOutState(
+                'completedTransfer',
+                'spTransferUi',
+            ),
+        })
+        const multispendWithdrawAccepted = makeTestTxnEntry(
+            'multispendWithdrawal',
             {
-                event: {
-                    withdrawalRequest:
-                        makeTestMultispendWithdrawRequest('accepted'),
-                },
-            },
-        )
-        const spv2TransferOutDataNotInCache = makeTestRpcTxnEntry(
-            'sPV2TransferOut',
-            {
-                state: makeTestSPV2TransferOutState(
-                    'dataNotInCache',
-                    'spTransferUi',
-                ),
+                state: makeTestMultispendWithdrawalEventData('accepted'),
             },
         )
 
@@ -109,107 +116,125 @@ describe('makeTxnStatusBadge', () => {
         expect(makeTxnStatusBadge(oobSendCanceledFailure)).toBe('outgoing')
         expect(makeTxnStatusBadge(spDepositComplete)).toBe('outgoing')
         expect(makeTxnStatusBadge(spv2DepositCompleted)).toBe('outgoing')
-        expect(makeTxnStatusBadge(spv2TransferOut)).toBe('outgoing')
+        expect(makeTxnStatusBadge(spv2TransferOutSpTransferUi)).toBe('outgoing')
+        expect(makeTxnStatusBadge(spv2TransferOutMultispend)).toBe('outgoing')
+        expect(makeTxnStatusBadge(spv2TransferOutMatrix)).toBe('outgoing')
         expect(makeTxnStatusBadge(multispendWithdrawAccepted)).toBe('outgoing')
-        // TODO:TEST: This should NOT be the case - Set to "pending" if bug is fixed
-        expect(makeTxnStatusBadge(spv2TransferOutDataNotInCache)).toBe(
-            'outgoing',
-        )
     })
 
     it('should return "pending" for pending transactions', () => {
-        const lnPayCreated = makeTestRpcTxnEntry('lnPay', {
+        const lnPayCreated = makeTestTxnEntry('lnPay', {
             state: makeTestLnPayState('created'),
         })
-        const lnPayFunded = makeTestRpcTxnEntry('lnPay', {
+        const lnPayFunded = makeTestTxnEntry('lnPay', {
             state: makeTestLnPayState('funded'),
         })
-        const lnPayAwaitingChange = makeTestRpcTxnEntry('lnPay', {
+        const lnPayAwaitingChange = makeTestTxnEntry('lnPay', {
             state: makeTestLnPayState('awaitingChange'),
         })
-        const lnPayWaitingForRefund = makeTestRpcTxnEntry('lnPay', {
+        const lnPayWaitingForRefund = makeTestTxnEntry('lnPay', {
             state: makeTestLnPayState('waitingForRefund'),
         })
-        const oobSendUserCanceledProcessing = makeTestRpcTxnEntry('oobSend', {
+        const onchainWithdrawCreated = makeTestTxnEntry('onchainWithdraw', {
+            state: makeTestOnchainWithdrawState('created'),
+        })
+        const oobSendUserCanceledProcessing = makeTestTxnEntry('oobSend', {
             state: makeTestOOBSpendState('userCanceledProcessing'),
         })
-        const spDepositPending = makeTestRpcTxnEntry('spDeposit', {
+        const spDepositPending = makeTestTxnEntry('spDeposit', {
             state: makeTestSPDepositState('pendingDeposit'),
         })
-        const spv2DepositPending = makeTestRpcTxnEntry('sPV2Deposit', {
+        const spDepositDataNotInCache = makeTestTxnEntry('spDeposit', {
+            state: makeTestSPDepositState('dataNotInCache'),
+        })
+        const spv2DepositPending = makeTestTxnEntry('sPV2Deposit', {
             state: makeTestSPV2DepositState('pendingDeposit'),
         })
-        const lnReceivePending = makeTestRpcTxnEntry('lnReceive', {
+        const spv2DepositDataNotInCache = makeTestTxnEntry('sPV2Deposit', {
+            state: makeTestSPV2DepositState('dataNotInCache'),
+        })
+        const lnReceiveCreated = makeTestTxnEntry('lnReceive', {
             state: makeTestLnReceiveState('created'),
         })
-        const lnReceiveWaitingForPayment = makeTestRpcTxnEntry('lnReceive', {
+        const lnReceiveWaitingForPayment = makeTestTxnEntry('lnReceive', {
             state: makeTestLnReceiveState('waitingForPayment'),
         })
-        const lnReceiveFunded = makeTestRpcTxnEntry('lnReceive', {
+        const lnReceiveFunded = makeTestTxnEntry('lnReceive', {
             state: makeTestLnReceiveState('funded'),
         })
-        const lnReceiveAwaitingFunds = makeTestRpcTxnEntry('lnReceive', {
+        const lnReceiveAwaitingFunds = makeTestTxnEntry('lnReceive', {
             state: makeTestLnReceiveState('awaitingFunds'),
         })
-        const lnurlWaitingForPayment = makeTestRpcTxnEntry(
-            'lnRecurringdReceive',
-            {
-                state: makeTestLnReceiveState('waitingForPayment'),
-            },
-        )
-        const lnurlFunded = makeTestRpcTxnEntry('lnRecurringdReceive', {
+        const lnurlWaitingForPayment = makeTestTxnEntry('lnRecurringdReceive', {
+            state: makeTestLnReceiveState('waitingForPayment'),
+        })
+        const lnurlFunded = makeTestTxnEntry('lnRecurringdReceive', {
             state: makeTestLnReceiveState('funded'),
         })
-        const lnurlAwaitingFunds = makeTestRpcTxnEntry('lnRecurringdReceive', {
+        const lnurlAwaitingFunds = makeTestTxnEntry('lnRecurringdReceive', {
             state: makeTestLnReceiveState('awaitingFunds'),
         })
-        const onchainDepositWaitingForTransaction = makeTestRpcTxnEntry(
+        const onchainDepositWaitingForTransaction = makeTestTxnEntry(
             'onchainDeposit',
             {
                 state: makeTestOnchainDepositState('waitingForTransaction'),
             },
         )
-        const onchainDepositWaitingForConfirmation = makeTestRpcTxnEntry(
+        const onchainDepositWaitingForConfirmation = makeTestTxnEntry(
             'onchainDeposit',
             {
                 state: makeTestOnchainDepositState('waitingForConfirmation'),
             },
         )
-        const onchainDepositClaimed = makeTestRpcTxnEntry('onchainDeposit', {
+        const onchainDepositClaimed = makeTestTxnEntry('onchainDeposit', {
             state: makeTestOnchainDepositState('confirmed'),
         })
-        const spWithdrawPending = makeTestRpcTxnEntry('spWithdraw', {
+        const spWithdrawPending = makeTestTxnEntry('spWithdraw', {
             state: makeTestSPWithdrawalState('pendingWithdrawal'),
         })
-        const spv2WithdrawalPending = makeTestRpcTxnEntry('sPV2Withdrawal', {
+        const spv2WithdrawalPending = makeTestTxnEntry('sPV2Withdrawal', {
             state: makeTestSPV2WithdrawalState('pendingWithdrawal'),
         })
-        const oobReceiveCreated = makeTestRpcTxnEntry('oobReceive', {
+        const spv2TransferOutDataNotInCache = makeTestTxnEntry(
+            'sPV2TransferOut',
+            {
+                state: makeTestSPV2TransferOutState(
+                    'dataNotInCache',
+                    'unknown',
+                ),
+            },
+        )
+        const spv2TransferInDataNotInCache = makeTestTxnEntry(
+            'sPV2TransferIn',
+            {
+                state: makeTestSPV2TransferInState('dataNotInCache', 'unknown'),
+            },
+        )
+        const oobReceiveCreated = makeTestTxnEntry('oobReceive', {
             state: makeTestOOBReissueState('created'),
         })
-        const oobReceiveIssuing = makeTestRpcTxnEntry('oobReceive', {
+        const oobReceiveIssuing = makeTestTxnEntry('oobReceive', {
             state: makeTestOOBReissueState('issuing'),
         })
-        const multispendWithdrawalUnknown = makeTestMultispendTxnEntry(
-            'withdrawal',
+        const multispendWithdrawalUnknown = makeTestTxnEntry(
+            'multispendWithdrawal',
             {
-                event: {
-                    withdrawalRequest:
-                        makeTestMultispendWithdrawRequest('unknown'),
-                },
+                state: makeTestMultispendWithdrawalEventData('unknown'),
             },
         )
 
+        expect(makeTxnStatusBadge(multispendWithdrawalUnknown)).toBe('pending')
         expect(makeTxnStatusBadge(lnPayCreated)).toBe('pending')
         expect(makeTxnStatusBadge(lnPayFunded)).toBe('pending')
         expect(makeTxnStatusBadge(lnPayAwaitingChange)).toBe('pending')
         expect(makeTxnStatusBadge(lnPayWaitingForRefund)).toBe('pending')
+        expect(makeTxnStatusBadge(onchainWithdrawCreated)).toBe('pending')
         expect(makeTxnStatusBadge(oobSendUserCanceledProcessing)).toBe(
             'pending',
         )
         expect(makeTxnStatusBadge(spDepositPending)).toBe('pending')
         expect(makeTxnStatusBadge(spv2DepositPending)).toBe('pending')
-        expect(makeTxnStatusBadge(lnReceivePending)).toBe('pending')
+        expect(makeTxnStatusBadge(lnReceiveCreated)).toBe('pending')
         expect(makeTxnStatusBadge(lnReceiveWaitingForPayment)).toBe('pending')
         expect(makeTxnStatusBadge(lnReceiveFunded)).toBe('pending')
         expect(makeTxnStatusBadge(lnReceiveAwaitingFunds)).toBe('pending')
@@ -227,45 +252,61 @@ describe('makeTxnStatusBadge', () => {
         expect(makeTxnStatusBadge(spv2WithdrawalPending)).toBe('pending')
         expect(makeTxnStatusBadge(oobReceiveCreated)).toBe('pending')
         expect(makeTxnStatusBadge(oobReceiveIssuing)).toBe('pending')
-        expect(makeTxnStatusBadge(multispendWithdrawalUnknown)).toBe('pending')
+        expect(makeTxnStatusBadge(spv2TransferOutDataNotInCache)).toBe(
+            'pending',
+        )
+        expect(makeTxnStatusBadge(spv2TransferInDataNotInCache)).toBe('pending')
+        expect(makeTxnStatusBadge(spDepositDataNotInCache)).toBe('pending')
+        expect(makeTxnStatusBadge(spv2DepositDataNotInCache)).toBe('pending')
     })
 
     it('should return "failed" for failed transactions', () => {
-        const lnPayCanceled = makeTestRpcTxnEntry('lnPay', {
-            state: makeTestLnPayState('canceled'),
-        })
-        const lnPayFailed = makeTestRpcTxnEntry('lnPay', {
+        const lnPayFailed = makeTestTxnEntry('lnPay', {
             state: makeTestLnPayState('failed'),
         })
-        const lnPayRefunded = makeTestRpcTxnEntry('lnPay', {
+        const lnPayRefunded = makeTestTxnEntry('lnPay', {
             state: makeTestLnPayState('refunded'),
         })
-        const onchainWithdrawFailed = makeTestRpcTxnEntry('onchainWithdraw', {
+        const onchainWithdrawFailed = makeTestTxnEntry('onchainWithdraw', {
             state: makeTestOnchainWithdrawState('failed'),
         })
-        const oobSendCanceled = makeTestRpcTxnEntry('oobSend', {
+        const oobSendCanceled = makeTestTxnEntry('oobSend', {
             state: makeTestOOBSpendState('userCanceledSuccess'),
         })
-        const oobSendRefunded = makeTestRpcTxnEntry('oobSend', {
+        const oobSendRefunded = makeTestTxnEntry('oobSend', {
             state: makeTestOOBSpendState('refunded'),
         })
-        const onchainDepositFailed = makeTestRpcTxnEntry('onchainDeposit', {
+        const spv2DepositFailed = makeTestTxnEntry('sPV2Deposit', {
+            state: makeTestSPV2DepositState('failedDeposit'),
+        })
+        const spv2TransferOutCompletedUnknown = makeTestTxnEntry(
+            'sPV2TransferOut',
+            {
+                state: makeTestSPV2TransferOutState(
+                    'completedTransfer',
+                    'unknown',
+                ),
+            },
+        )
+        const onchainDepositFailed = makeTestTxnEntry('onchainDeposit', {
             state: makeTestOnchainDepositState('failed'),
         })
-        const oobReceiveFailed = makeTestRpcTxnEntry('oobReceive', {
+        const spv2WithdrawalFailed = makeTestTxnEntry('sPV2Withdrawal', {
+            state: makeTestSPV2WithdrawalState('failedWithdrawal'),
+        })
+        const spv2TransferInUnknown = makeTestTxnEntry('sPV2TransferIn', {
+            state: makeTestSPV2TransferInState('completedTransfer', 'unknown'),
+        })
+        const oobReceiveFailed = makeTestTxnEntry('oobReceive', {
             state: makeTestOOBReissueState('failed'),
         })
-        const multispendWithdrawFailed = makeTestMultispendTxnEntry(
-            'withdrawal',
+        const multispendWithdrawFailed = makeTestTxnEntry(
+            'multispendWithdrawal',
             {
-                event: {
-                    withdrawalRequest:
-                        makeTestMultispendWithdrawRequest('rejected'),
-                },
+                state: makeTestMultispendWithdrawalEventData('rejected'),
             },
         )
 
-        expect(makeTxnStatusBadge(lnPayCanceled)).toBe('failed')
         expect(makeTxnStatusBadge(lnPayFailed)).toBe('failed')
         expect(makeTxnStatusBadge(lnPayRefunded)).toBe('failed')
         expect(makeTxnStatusBadge(onchainWithdrawFailed)).toBe('failed')
@@ -274,17 +315,30 @@ describe('makeTxnStatusBadge', () => {
         expect(makeTxnStatusBadge(onchainDepositFailed)).toBe('failed')
         expect(makeTxnStatusBadge(oobReceiveFailed)).toBe('failed')
         expect(makeTxnStatusBadge(multispendWithdrawFailed)).toBe('failed')
+        expect(makeTxnStatusBadge(spv2DepositFailed)).toBe('failed')
+        expect(makeTxnStatusBadge(spv2WithdrawalFailed)).toBe('failed')
+        expect(makeTxnStatusBadge(spv2TransferInUnknown)).toBe('failed')
+        expect(makeTxnStatusBadge(spv2TransferOutCompletedUnknown)).toBe(
+            'failed',
+        )
     })
 
     it('should return "expired" for expired transactions', () => {
-        const lnReceiveCanceled = makeTestRpcTxnEntry('lnReceive', {
+        const lnPayCanceled = makeTestTxnEntry('lnPay', {
+            state: makeTestLnPayState('canceled'),
+        })
+        const lnReceiveCanceled = makeTestTxnEntry('lnReceive', {
             state: makeTestLnReceiveState('canceled'),
         })
-        const lnurlCanceled = makeTestRpcTxnEntry('lnRecurringdReceive', {
-            state: makeTestLnReceiveState('canceled'),
-        })
+        const lnRecurringdReceiveCanceled = makeTestTxnEntry(
+            'lnRecurringdReceive',
+            {
+                state: makeTestLnReceiveState('canceled'),
+            },
+        )
 
+        expect(makeTxnStatusBadge(lnPayCanceled)).toBe('expired')
         expect(makeTxnStatusBadge(lnReceiveCanceled)).toBe('expired')
-        expect(makeTxnStatusBadge(lnurlCanceled)).toBe('expired')
+        expect(makeTxnStatusBadge(lnRecurringdReceiveCanceled)).toBe('expired')
     })
 })

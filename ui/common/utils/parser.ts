@@ -130,13 +130,11 @@ const offlineParsers: Parser[] = [
 const onlineParsers: Parser[] = [
     {
         name: 'parseBolt11',
-        handler: (raw, fedimint, t) => parseBolt11(raw, fedimint, t, null),
+        handler: (raw, fedimint, t) => parseBolt11(raw, fedimint, t),
     },
-
     {
         name: 'parseLnurl',
-        handler: (raw, fedimint, t, federationId) =>
-            parseLnurl(raw, fedimint, t, federationId),
+        handler: (raw, fedimint, t) => parseLnurl(raw, fedimint, t),
     },
     {
         name: 'parseFediUri',
@@ -259,7 +257,6 @@ async function parseLnurl(
     raw: string,
     fedimint: FedimintBridge,
     t: TFunction,
-    federationId: string | undefined,
 ): Promise<
     | ParsedLnurlAuth
     | ParsedLnurlPay
@@ -291,8 +288,18 @@ async function parseLnurl(
             lnurlParamPromise = getLnurlParams(url)
         }
     } else if (isWebsiteUrl) {
-        // Use raw and not lnRaw for http(s) to keep original casing.
-        lnurlParamPromise = getLnurlParams(raw)
+        // if we are dealing with a website URL, we should preserve casing for URL params
+        // but lowercase the URL itself to avoid a a bug in js-lnurl that
+        // does not handle uppercase URLs (HTTPS:// fails but https:// works)
+        try {
+            const url = new URL(raw)
+            // Lowercase origin and hostname, keep pathname and search as-is
+            const normalizedUrl = `${url.origin.toLowerCase()}${url.pathname}${url.search}${url.hash}`
+            lnurlParamPromise = getLnurlParams(normalizedUrl)
+        } catch {
+            // If URL parsing fails, fall back to just passing the raw URL
+            lnurlParamPromise = getLnurlParams(raw)
+        }
     }
 
     // If we didn't detect an LNURL but it was a valid website URL, return that.
@@ -376,7 +383,7 @@ async function parseLnurl(
                     throw new Error(res.reason || 'errors.unknown-error')
                 }
 
-                return parseBolt11(res.pr, fedimint, t, federationId)
+                return parseBolt11(res.pr, fedimint, t)
             }
 
             return {
@@ -462,7 +469,6 @@ export async function parseBolt11(
     raw: string,
     fedimint: FedimintBridge,
     t: TFunction,
-    federationId: string | null = null,
 ): Promise<ParsedBolt11 | ParsedUnknownData | undefined> {
     const lnRaw = stripProtocol(raw, 'lightning').toLowerCase()
     if (!isBolt11(lnRaw)) {
@@ -470,7 +476,7 @@ export async function parseBolt11(
     }
 
     try {
-        const decoded = await fedimint.decodeInvoice(lnRaw, federationId)
+        const decoded = await fedimint.parseInvoice(lnRaw)
 
         return {
             type: ParserDataType.Bolt11,
@@ -557,7 +563,7 @@ async function parseBip21(
         try {
             // TODO: allow parsing with no federation ID
             if (!federationId) return
-            const invoice = await fedimint.decodeInvoice(bolt11, federationId)
+            const invoice = await fedimint.parseInvoice(bolt11)
             return {
                 type: ParserDataType.Bolt11,
                 data: {

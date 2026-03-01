@@ -21,6 +21,7 @@ use federations::federation_v2::spv2_pay_address::Spv2PaymentAddress;
 use federations::federation_v2::FederationV2;
 use federations::Federations;
 use fedimint_client::db::ChronologicalOperationLogKey;
+use fedimint_connectors::ConnectorRegistry;
 use fedimint_core::core::OperationId;
 use fedimint_core::invite_code::InviteCode;
 use fedimint_core::timing::TimeReporter;
@@ -44,7 +45,7 @@ use rpc_types::communities::RpcCommunity;
 use rpc_types::error::{ErrorCode, RpcError};
 use rpc_types::event::{Event, EventSink, PanicEvent, SocialRecoveryEvent, TypedEventExt};
 use rpc_types::matrix::{
-    MatrixInitializeStatus, RpcBackPaginationStatus, RpcComposerDraft, RpcMatrixAccountSession,
+    RpcBackPaginationStatus, RpcComposerDraft, RpcMatrixAccountSession, RpcMatrixInitializeStatus,
     RpcMatrixUploadResult, RpcMatrixUserDirectorySearchResponse, RpcPublicRoomInfo, RpcRoomId,
     RpcRoomMember, RpcRoomNotificationMode, RpcSerializedRoomInfo, RpcSyncIndicator,
     RpcTimelineEventItemId, RpcTimelineItem, RpcUserId,
@@ -88,6 +89,7 @@ pub enum FedimintError {
 
 pub async fn fedimint_initialize_async(
     storage: Storage,
+    connectors: ConnectorRegistry,
     event_sink: EventSink,
     device_identifier: String,
     app_flavor: RpcAppFlavor,
@@ -109,6 +111,7 @@ pub async fn fedimint_initialize_async(
 
     let bridge = Bridge::new(
         storage,
+        connectors,
         event_sink,
         fedi_api,
         feature_catalog,
@@ -361,7 +364,7 @@ async fn generateInvoice(
     expiry: Option<u32>,
     frontend_metadata: FrontendMetadata,
 ) -> anyhow::Result<String> {
-    let rpc_invoice = federation
+    let invoice = federation
         .generate_invoice(
             amount,
             description,
@@ -369,25 +372,23 @@ async fn generateInvoice(
             frontend_metadata,
         )
         .await?;
-    Ok(rpc_invoice.invoice)
+    Ok(invoice.to_string())
 }
 
 #[macro_rules_derive(rpc_method!)]
-// FIXME: make this argument RpcInvoice?
-async fn decodeInvoice(
-    federations: &Federations,
-    federation_id: Option<RpcFederationId>,
+async fn parseInvoice(_runtime: Arc<Runtime>, invoice: String) -> anyhow::Result<RpcInvoice> {
+    let invoice: Bolt11Invoice = invoice.trim().parse().context(ErrorCode::InvalidInvoice)?;
+    let bridge_invoice = RpcInvoice::try_from(invoice)?;
+    Ok(bridge_invoice)
+}
+
+#[macro_rules_derive(federation_rpc_method!)]
+async fn estimateLnFees(
+    federation: Arc<FederationV2>,
     invoice: String,
-) -> anyhow::Result<RpcInvoice> {
-    // TODO: validate the invoice (same network, haven't already paid, etc)
-    if let Some(federation_id) = federation_id {
-        let federation = federations.get_federation(&federation_id.0)?;
-        federation.decode_invoice(invoice).await
-    } else {
-        let invoice: Bolt11Invoice = invoice.trim().parse().context(ErrorCode::InvalidInvoice)?;
-        let bridge_invoice = RpcInvoice::try_from(invoice)?;
-        Ok(bridge_invoice)
-    }
+) -> anyhow::Result<RpcFeeDetails> {
+    let invoice: Bolt11Invoice = invoice.trim().parse().context(ErrorCode::InvalidInvoice)?;
+    federation.estimate_ln_fees(&invoice).await
 }
 
 #[macro_rules_derive(federation_rpc_method!)]
@@ -415,11 +416,18 @@ async fn listGateways(federation: Arc<FederationV2>) -> anyhow::Result<Vec<RpcLi
 }
 
 #[macro_rules_derive(federation_recovering_rpc_method!)]
-async fn switchGateway(
+async fn setGatewayOverride(
     federation: Arc<FederationV2>,
-    gateway_id: RpcPublicKey,
+    gateway_id: Option<RpcPublicKey>,
 ) -> anyhow::Result<()> {
-    federation.switch_gateway(&gateway_id.0).await
+    federation
+        .set_gateway_override(gateway_id.as_ref().map(|g| &g.0))
+        .await
+}
+
+#[macro_rules_derive(federation_rpc_method!)]
+async fn getGatewayOverride(federation: Arc<FederationV2>) -> anyhow::Result<Option<RpcPublicKey>> {
+    Ok(federation.get_gateway_override().await?.map(RpcPublicKey))
 }
 
 #[macro_rules_derive(federation_rpc_method!)]
@@ -1237,7 +1245,7 @@ async fn dumpDb(bridge: &BridgeFull, federation_id: String) -> anyhow::Result<Pa
 #[macro_rules_derive(rpc_method!)]
 async fn matrixInitializeStatus(
     bridge: &Bridge,
-    stream_id: RpcStreamId<MatrixInitializeStatus>,
+    stream_id: RpcStreamId<RpcMatrixInitializeStatus>,
 ) -> anyhow::Result<()> {
     let runtime: Arc<Runtime> = bridge.try_get()?;
     let bg_matrix: &BgMatrix = bridge.try_get()?;
@@ -2275,6 +2283,18 @@ async fn matrixSpTransferObserveState(
 }
 
 #[macro_rules_derive(rpc_method!)]
+async fn matrixDenySpTransferFederationInvite(
+    bg_matrix: &BgMatrix,
+    room_id: RpcRoomId,
+    event_id: RpcEventId,
+) -> anyhow::Result<()> {
+    let spt_matrix = bg_matrix.wait_spt().await;
+    spt_matrix
+        .deny_federation_invite(&SpMatrixTransferId { room_id, event_id })
+        .await
+}
+
+#[macro_rules_derive(rpc_method!)]
 async fn matrixMultispendEventData(
     bg_matrix: &BgMatrix,
     room_id: RpcRoomId,
@@ -2368,11 +2388,13 @@ rpc_methods!(RpcMethods {
     listFederationsPendingRejoinFromScratch,
     // Lightning
     generateInvoice,
-    decodeInvoice,
+    parseInvoice,
+    estimateLnFees,
     payInvoice,
     getPrevPayInvoiceResult,
     listGateways,
-    switchGateway,
+    setGatewayOverride,
+    getGatewayOverride,
     // On-Chain
     supportsSafeOnchainDeposit,
     generateAddress,
@@ -2525,6 +2547,7 @@ rpc_methods!(RpcMethods {
     // SP Transfer
     matrixSpTransferSend,
     matrixSpTransferObserveState,
+    matrixDenySpTransferFederationInvite,
     // multispend
     matrixSubscribeMultispendGroup,
     matrixSubscribeMultispendAccountInfo,

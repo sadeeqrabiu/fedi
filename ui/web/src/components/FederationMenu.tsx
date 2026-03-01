@@ -8,6 +8,7 @@ import SocialPeopleIcon from '@fedi/common/assets/svgs/social-people.svg'
 import TableExportIcon from '@fedi/common/assets/svgs/table-export.svg'
 import { useToast } from '@fedi/common/hooks/toast'
 import { useExportTransactions } from '@fedi/common/hooks/transactions'
+import { selectAuthenticatedGuardian } from '@fedi/common/redux'
 import { LoadedFederation } from '@fedi/common/types'
 import {
     getFederationTosUrl,
@@ -15,6 +16,11 @@ import {
     shouldShowSocialRecovery,
 } from '@fedi/common/utils/FederationUtils'
 
+import {
+    settingsBackupSocialRoute,
+    settingsStartRecoveryAssistRoute,
+} from '../constants/routes'
+import { useAppSelector } from '../hooks'
 import { AccordionMenu, MenuItemInfo, MenuItemName } from './AccordionMenu'
 import { FederationAvatar } from './FederationAvatar'
 import { MenuGroup } from './SettingsMenu'
@@ -34,6 +40,8 @@ export const FederationMenu = ({
     const toast = useToast()
     const [exportingFederationId, setExportingFederationId] =
         useState<string>('')
+
+    const authenticatedGuardian = useAppSelector(selectAuthenticatedGuardian)
 
     const exportTransactions = useExportTransactions(t, exportingFederationId)
 
@@ -63,6 +71,12 @@ export const FederationMenu = ({
     const federationMenu: MenuGroup = {
         items: [
             {
+                label: t('feature.recovery.guardian-access'),
+                icon: SocialPeopleIcon,
+                href: settingsStartRecoveryAssistRoute,
+                hidden: authenticatedGuardian?.federationId !== federation.id,
+            },
+            {
                 label: t('feature.federations.invite-members'),
                 icon: InviteMembersIcon,
                 onClick: () => onInviteMembers(federation.id),
@@ -71,7 +85,7 @@ export const FederationMenu = ({
             {
                 label: t('feature.backup.social-backup'),
                 icon: SocialPeopleIcon,
-                href: `/settings/backup/social#id=${federation.id}`,
+                href: `${settingsBackupSocialRoute}#id=${federation.id}`,
                 hidden: !shouldShowSocialRecovery(federation),
             },
             {
