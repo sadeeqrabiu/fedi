@@ -247,7 +247,6 @@ macro_rules! federation_rpc_method {
             pub type Return = $ret;
             pub async fn handle(bridge: Arc<Bridge>, $name::args::$name { federation_id, $( $arg_name, )* .. }: $name::args::$name) -> anyhow::Result<$ret> {
                 let $federation = bridge.full()?.federations.get_federation(&federation_id.0)?;
-                tracing::Span::current().record("federation_id", &federation_id.0);
                 super::$name($federation, $($arg_name),*).await
             }
         }
@@ -286,7 +285,6 @@ macro_rules! federation_recovering_rpc_method {
             pub type Return = $ret;
             pub async fn handle(bridge: Arc<Bridge>, $name::args::$name { federation_id, $( $arg_name, )* .. }: $name::args::$name) -> anyhow::Result<$ret> {
                 let $federation = bridge.full()?.federations.get_federation_maybe_recovering(&federation_id.0)?;
-                tracing::Span::current().record("federation_id", &federation_id.0);
                 super::$name($federation, $($arg_name),*).await
             }
         }
@@ -304,7 +302,7 @@ pub(crate) async fn joinFederation(
     invite_code: String,
     recover_from_scratch: bool,
 ) -> anyhow::Result<RpcFederation> {
-    info!("joining federation {:?}", invite_code);
+    info!("joining federation");
     let fed_arc = bridge
         .federations
         .join_federation(invite_code, recover_from_scratch)
@@ -441,6 +439,13 @@ async fn generateAddress(
     frontend_metadata: FrontendMetadata,
 ) -> anyhow::Result<String> {
     federation.generate_address(frontend_metadata).await
+}
+
+#[macro_rules_derive(federation_rpc_method!)]
+async fn getPegInFees(federation: Arc<FederationV2>) -> anyhow::Result<RpcAmount> {
+    Ok(RpcAmount(
+        federation.client.wallet()?.get_fee_consensus().peg_in_abs,
+    ))
 }
 
 #[macro_rules_derive(federation_rpc_method!)]
@@ -1238,8 +1243,14 @@ async fn getAccruedPendingFediFeesPerTXType(
 }
 
 #[macro_rules_derive(rpc_method!)]
-async fn dumpDb(bridge: &BridgeFull, federation_id: String) -> anyhow::Result<PathBuf> {
-    bridge.dump_db(&federation_id).await
+async fn dumpDb(
+    bridge: &BridgeFull,
+    federation_id: String,
+    include_federation_secret: Option<bool>,
+) -> anyhow::Result<PathBuf> {
+    bridge
+        .dump_db(&federation_id, include_federation_secret.unwrap_or(false))
+        .await
 }
 
 #[macro_rules_derive(rpc_method!)]
@@ -2398,6 +2409,7 @@ rpc_methods!(RpcMethods {
     // On-Chain
     supportsSafeOnchainDeposit,
     generateAddress,
+    getPegInFees,
     recheckPeginAddress,
     previewPayAddress,
     payAddress,
@@ -2580,8 +2592,7 @@ rpc_methods!(RpcMethods {
         request_id = %{
             static REQUEST_ID: AtomicU64 = AtomicU64::new(0);
             REQUEST_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
-        },
-        federation_id,
+        }
     )
 )]
 pub async fn fedimint_rpc_async(bridge: Arc<Bridge>, method: String, payload: String) -> String {

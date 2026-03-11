@@ -1,10 +1,8 @@
-import React, { useCallback, useState } from 'react'
+import React, { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { useFederationInviteCode } from '@fedi/common/hooks/federation'
-import { useCommonSelector } from '@fedi/common/hooks/redux'
 import { useToast } from '@fedi/common/hooks/toast'
-import { selectFederationIds } from '@fedi/common/redux'
 import { MatrixEvent } from '@fedi/common/types'
 
 import { Button } from '../../components/Button'
@@ -29,19 +27,14 @@ export const ChatFederationInviteEvent: React.FC<Props> = ({ event, isMe }) => {
     const [isShowing, setIsShowing] = useState(false)
 
     const inviteCode = event.content.body
-    const { previewResult, isChecking, isError, isJoining, handleJoin } =
-        useFederationInviteCode(t, inviteCode)
-
-    // Memoized selector that only returns boolean for this specific federation
-    // This prevents re-renders when other federations change
-    const selectIsMember = useCallback(
-        (state: Parameters<typeof selectFederationIds>[0]) =>
-            previewResult
-                ? selectFederationIds(state).includes(previewResult.preview.id)
-                : false,
-        [previewResult],
-    )
-    const isMemberFromRedux = useCommonSelector(selectIsMember)
+    const {
+        previewResult,
+        isChecking,
+        isError,
+        isJoining,
+        isMember,
+        handleJoin,
+    } = useFederationInviteCode(t, inviteCode)
 
     const handleOnCopy = () => {
         copy(inviteCode).then(() => {
@@ -79,7 +72,6 @@ export const ChatFederationInviteEvent: React.FC<Props> = ({ event, isMe }) => {
     }
 
     const { preview } = previewResult
-    const isMember = isMemberFromRedux
 
     return (
         <>
@@ -136,28 +128,22 @@ export const ChatFederationInviteEvent: React.FC<Props> = ({ event, isMe }) => {
                 title={t('phrases.join-federation')}
                 type="tray"
                 disableClose={isJoining}>
-                <PreviewWrapper>
-                    {previewResult && (
-                        <FederationPreview
-                            onJoin={recoverFromScratch =>
-                                handleJoin(recoverFromScratch).then(() =>
-                                    setIsShowing(false),
-                                )
-                            }
-                            onBack={() => setIsShowing(false)}
-                            federation={previewResult.preview}
-                            isJoining={isJoining}
-                        />
-                    )}
-                </PreviewWrapper>
+                {previewResult && (
+                    <FederationPreview
+                        onJoin={recoverFromScratch =>
+                            handleJoin(recoverFromScratch).then(() =>
+                                setIsShowing(false),
+                            )
+                        }
+                        onBack={() => setIsShowing(false)}
+                        federation={previewResult.preview}
+                        isJoining={isJoining}
+                    />
+                )}
             </Dialog>
         </>
     )
 }
-
-const PreviewWrapper = styled(Column, {
-    paddingTop: theme.spacing.lg,
-})
 
 const Wrapper = styled('div', {})
 

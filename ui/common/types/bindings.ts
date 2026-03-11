@@ -545,6 +545,8 @@ export type RpcFeeDetails = {
 
 export type RpcFiatAmount = number;
 
+export type RpcFiatAndBtcAmount = { fiat: RpcFiatAmount; btc: RpcAmount };
+
 export type RpcFileInfo = {
   mimetype: string | null;
   size: number | null;
@@ -757,6 +759,7 @@ export type RpcMethods = {
   getGatewayOverride: [getGatewayOverride, RpcPublicKey | null];
   supportsSafeOnchainDeposit: [supportsSafeOnchainDeposit, boolean];
   generateAddress: [generateAddress, string];
+  getPegInFees: [getPegInFees, RpcAmount];
   recheckPeginAddress: [recheckPeginAddress, null];
   previewPayAddress: [previewPayAddress, RpcFeeDetails];
   payAddress: [payAddress, RpcOperationId];
@@ -1216,20 +1219,22 @@ export type RpcSPv2CachedSyncResponse = {
   currCycleIdx: number;
   currCycleStartTime: number;
   currCycleStartPrice: number;
-  stagedBalance: RpcAmount;
-  lockedBalance: RpcAmount;
+  staged: RpcFiatAndBtcAmount;
+  locked: RpcFiatAndBtcAmount;
+  lockedPlusStaged: RpcFiatAndBtcAmount;
   idleBalance: RpcAmount;
-  pendingUnlockRequest: number | null;
+  pendingUnlock: RpcFiatAndBtcAmount | null;
 };
 
 export type RpcSPv2SyncResponse = {
   currCycleIdx: number;
   currCycleStartTime: number;
   currCycleStartPrice: number;
-  stagedBalance: RpcAmount;
-  lockedBalance: RpcAmount;
+  staged: RpcFiatAndBtcAmount;
+  locked: RpcFiatAndBtcAmount;
+  lockedPlusStaged: RpcFiatAndBtcAmount;
   idleBalance: RpcAmount;
-  pendingUnlockRequest: number | null;
+  pendingUnlock: RpcFiatAndBtcAmount | null;
 };
 
 export type RpcSerializedRoomInfo = {
@@ -1412,6 +1417,7 @@ export type RpcTransaction = {
   | {
       kind: "onchainDeposit";
       onchain_address: string;
+      peg_in_fees: RpcAmount;
       state: RpcOnchainDepositState | null;
     }
   | { kind: "oobSend"; state: RpcOOBSpendState | null }
@@ -1451,6 +1457,7 @@ export type RpcTransactionKind =
   | {
       kind: "onchainDeposit";
       onchain_address: string;
+      peg_in_fees: RpcAmount;
       state: RpcOnchainDepositState | null;
     }
   | { kind: "oobSend"; state: RpcOOBSpendState | null }
@@ -1497,6 +1504,7 @@ export type RpcTransactionListEntry = {
   | {
       kind: "onchainDeposit";
       onchain_address: string;
+      peg_in_fees: RpcAmount;
       state: RpcOnchainDepositState | null;
     }
   | { kind: "oobSend"; state: RpcOOBSpendState | null }
@@ -1799,7 +1807,10 @@ export type completeOnboardingNewSeed = {};
 
 export type completeSocialRecovery = {};
 
-export type dumpDb = { federationId: string };
+export type dumpDb = {
+  federationId: string;
+  includeFederationSecret?: boolean;
+};
 
 export type estimateLnFees = { federationId: RpcFederationId; invoice: string };
 
@@ -1859,6 +1870,8 @@ export type getMnemonic = {};
 export type getNostrPubkey = {};
 
 export type getNostrSecret = {};
+
+export type getPegInFees = { federationId: RpcFederationId };
 
 export type getPrevPayInvoiceResult = {
   federationId: RpcFederationId;

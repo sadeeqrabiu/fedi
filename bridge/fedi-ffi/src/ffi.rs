@@ -104,10 +104,10 @@ pub async fn fedimint_initialize_inner(
     std::panic::set_hook(Box::new({
         let event_sink = event_sink.clone();
         move |info| {
-            tracing::info!(%info, "panic");
-            // write separately in case backtrace capturing bugs out.
+            tracing::error!("panic");
+            // Write separately in case backtrace capturing bugs out.
             let backtrace = std::backtrace::Backtrace::force_capture();
-            tracing::info!(%backtrace, "panic");
+            tracing::error!(%backtrace, "panic");
 
             rpc::panic_hook(info, &*event_sink);
         }
@@ -127,6 +127,7 @@ pub async fn fedimint_initialize_inner(
         .context("Failed to initialize storage")?;
 
     let connectors = fedimint_connectors::ConnectorRegistry::build_from_client_env()?
+        .iroh_next(false)
         .bind()
         .await
         .context("Failed to bind connectors")?;

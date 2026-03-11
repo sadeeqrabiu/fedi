@@ -179,6 +179,7 @@ async fn tests_wrapper_for_bridge() -> anyhow::Result<()> {
         multispend_tests::test_multispend_minimal,
         multispend_tests::test_multispend_group_acceptance,
         multispend_tests::test_multispend_group_rejection,
+        multispend_tests::test_multispend_last_seen_cache_churn_does_not_panic,
         sp_transfer_tests::test_end_to_end,
         sp_transfer_tests::test_receiver_joins_federation_later,
         test_lightning_send_and_receive,
@@ -812,22 +813,23 @@ async fn test_on_chain_with_fedi_fees(
         )
         .await;
     }
+    let pegin_fees = federation.client.wallet()?.get_fee_consensus().peg_in_abs;
     assert_matches!(
         listTransactions(federation.clone(), None, None).await?[0],
         Ok(RpcTransactionListEntry {
             transaction: RpcTransaction {
                 kind: RpcTransactionKind::OnchainDeposit {
+                    peg_in_fees,
                     state: Some(RpcOnchainDepositState::Claimed(_)),
                     ..
                 },
                 ..
             },
             ..
-        })
+        }) if peg_in_fees == RpcAmount(pegin_fees)
     );
 
     let btc_amount = Amount::from_sats(10_000_000);
-    let pegin_fees = federation.client.wallet()?.get_fee_consensus().peg_in_abs;
     let receive_fedi_fee = Amount::from_msats(
         ((btc_amount.msats - pegin_fees.msats) * fedi_fees_receive_ppm).div_ceil(MILLION),
     );
@@ -905,22 +907,23 @@ async fn test_on_chain_with_fedi_fees_with_restart(
         )
         .await;
     }
+    let pegin_fees = federation.client.wallet()?.get_fee_consensus().peg_in_abs;
     assert_matches!(
         listTransactions(federation.clone(), None, None).await?[0],
         Ok(RpcTransactionListEntry {
             transaction: RpcTransaction {
                 kind: RpcTransactionKind::OnchainDeposit {
+                    peg_in_fees,
                     state: Some(RpcOnchainDepositState::Claimed(_)),
                     ..
                 },
                 ..
             },
             ..
-        })
+        }) if peg_in_fees == RpcAmount(pegin_fees)
     );
 
     let btc_amount = Amount::from_sats(10_000_000);
-    let pegin_fees = federation.client.wallet()?.get_fee_consensus().peg_in_abs;
     let receive_fedi_fee = Amount::from_msats(
         ((btc_amount.msats - pegin_fees.msats) * fedi_fees_receive_ppm).div_ceil(MILLION),
     );
@@ -1425,9 +1428,9 @@ async fn test_spv2_with_fedi_fees(
     let RpcSPv2CachedSyncResponse { sync_response, .. } =
         spv2AccountInfo(federation.clone()).await?;
     assert_eq!(sync_response.idle_balance.0, Amount::ZERO);
-    assert_eq!(sync_response.staged_balance.0, Amount::ZERO);
-    assert_eq!(sync_response.locked_balance.0, Amount::ZERO);
-    assert!(sync_response.pending_unlock_request.is_none());
+    assert_eq!(sync_response.staged.btc.0, Amount::ZERO);
+    assert_eq!(sync_response.locked.btc.0, Amount::ZERO);
+    assert!(sync_response.pending_unlock.is_none());
 
     // Receive some ecash first
     let initial_balance = Amount::from_msats(500_000);
@@ -1470,9 +1473,9 @@ async fn test_spv2_with_fedi_fees(
     let RpcSPv2CachedSyncResponse { sync_response, .. } =
         spv2AccountInfo(federation.clone()).await?;
     assert_eq!(sync_response.idle_balance.0, Amount::ZERO);
-    assert_eq!(sync_response.staged_balance.0, amount_to_deposit);
-    assert!(sync_response.pending_unlock_request.is_none());
-    assert_eq!(sync_response.locked_balance.0, Amount::ZERO);
+    assert_eq!(sync_response.staged.btc.0, amount_to_deposit);
+    assert!(sync_response.pending_unlock.is_none());
+    assert_eq!(sync_response.locked.btc.0, Amount::ZERO);
 
     // Withdraw and verify account info
     let amount_to_withdraw = Amount::from_msats(200_000);
@@ -1550,11 +1553,11 @@ async fn test_spv2_with_fedi_fees(
         spv2AccountInfo(federation.clone()).await?;
     assert_eq!(sync_response.idle_balance.0, Amount::ZERO);
     assert_eq!(
-        sync_response.staged_balance.0.msats,
+        sync_response.staged.btc.0.msats,
         amount_to_deposit.msats - amount_to_withdraw.msats
     );
-    assert!(sync_response.pending_unlock_request.is_none());
-    assert_eq!(sync_response.locked_balance.0, Amount::ZERO);
+    assert!(sync_response.pending_unlock.is_none());
+    assert_eq!(sync_response.locked.btc.0, Amount::ZERO);
 
     // Let's withdraw the remaining amount
     federation
